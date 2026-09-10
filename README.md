@@ -93,6 +93,21 @@ micro:bit (P1 RX) ←────────── R300 (GPIO10 TX, UART port=0
 - 注意 `control_motor` 嘅 checksum **唔係** checksum 成個 JSON，而係 checksum 佢自己砌嘅 `"%.2f,%.2f,%d"` 字串（例如 `-0.50,0.25,1000`）。所以 `main.ts` 特登寫咗個 `toFixed2()` 去夾硬砌出 byte-for-byte 一樣嘅文字，唔可以直接用 `number.toFixed()`（MakeCode 嘅 `number` 係 `double`，冇 `.toFixed()`）。
 - micro:bit 收到 ack 之後淨係**記低時間**（`lastAckTime`），唔會自動回覆 —— 除咗上面講嗰個 `diag_ack`。否則兩塊板會互 ack 到永遠。
 
+### 🔴 一定要加大 serial buffer（MakeCode 預設得 20 bytes）
+
+`connect()` 入面喺 `serial.redirect()` 之後即刻做咗兩句，**唔可以刪**：
+
+```ts
+serial.setRxBufferSize(128)
+serial.setTxBufferSize(128)
+```
+
+**點解**：MakeCode 個 serial RX/TX buffer **預設各得 20 bytes**，但呢條線上面最短嗰句 ack `{"MicroBit_ack":"success","checksum":61}` 已經 **41 bytes**，`control_motor` 更加去到 **78 bytes**。20 bytes 裝唔落，個 ring buffer 喺 `\n` 到達之前就已經捲咗一轉——`serial.readLine()` 攞返嚟嘅係截斷咗嘅尾段，連 `"MicroBit_ack"` 呢個 key 本身都已經俾沖走，所以 `line.indexOf("MicroBit_ack")` 永遠唔會中。
+
+⚠️ **佢個失敗症狀係「完全冧聲」**——唔係亂碼、唔係 checksum 唔啱、`onDataReceived` 睇落好似完全冇 fire 過。喺 R300 個 log 度睇落，同「實體回程線 P1 ← GPIO10 根本冇駁」**一模一樣，分唔到**。呢個亦都正正係點解要有第 ③ 段 `diag_ack`：冇佢就冇任何方法喺 R300 console 分辨「R300 送咗 ack」同「micro:bit 收到 ack」。
+
+揀 128 係因為 R300 嗰邊 `MicrobitLink` 個 RX 行上限同樣係 128 bytes。個參數型別係 `uint8`（上限 255），但加大過 128 冇意義，因為 R300 一樣頂唔住更長嘅行。
+
 ## `main.ts` 提供咩 Block？
 
 `main.ts` 入面所有 `//%` annotated 嘅 function 都會喺 MakeCode Blocks 畫面出現（底層 `serial.onDataReceived` 呢啲實作細節就特登冇 annotation，所以唔會喺 Blocks 度噪住你）。
@@ -255,6 +270,16 @@ mpremote connect /dev/cu.usbmodem1102 repl
 1. 開機有冇撳住 Button A？撳住嘅話會留喺 USB，唔會送去 R300
 2. `mpremote` 揀咗錯 port（見上面「點睇 Log」嗰個 warning）
 3. **R300 開機要 ~13 秒先會開始收 micro:bit 嘅訊息**（見下面）——如果啱啱兩部板一齊 power on，前 13 秒見唔到嘢／見到亂碼係正常
+4. **R300 有冇 provision 咗 WiFi？** 未 provision 嘅話塊板會卡喺 `wifi_configuring` 開緊自己個 config AP，而 `MicrobitLink` 個 RX task 係 gate 喺 `kDeviceStateIdle` 先起——即係話 R300 **完全冇聽緊**條 UART，micro:bit 送幾多都冇反應。Log 見到 `SsidManager: NVS namespace wifi doesn't exist` 就係呢個。行去個 hotspot（`floki-edu-microbit-XXXX`）開 `http://192.168.4.1` 入 WiFi 帳密就得
+
+### 反方向：R300 收到，但 micro:bit 好似收唔到回覆
+
+即係 R300 log 見到 `<- {"MB_cmd":"test"...}` 同 `-> {"MB_cmd_ack"...}`，但**永遠冇第 ③ 段 `diag_ack`**。兩個成因，症狀一模一樣：
+
+1. **Serial buffer 冇加大**（見上面「一定要加大 serial buffer」）——最常見，而且純軟件問題
+2. **實體回程線 `P1 ← GPIO10` 冇駁 / 駁錯**——記住兩邊要**交叉**：`P0 → GPIO21`、`P1 ← GPIO10`，仲要共地
+
+分辨方法：去程線係好嘅（唔係嘅話 R300 連 `<-` 都唔會見到），所以剩返「buffer」同「回程線」。先 confirm `connect()` 入面兩句 `setRxBufferSize`/`setTxBufferSize` 仲喺度、`pxt build` 真係行過（唔係改咗 `main.ts` 但冇 rebuild），再查線。
 
 ### 之前撞過嘅亂碼／冇反應：而家知道係「開機時序」居多，唔一定關 wiring 事
 
