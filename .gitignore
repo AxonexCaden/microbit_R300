@@ -1,0 +1,67 @@
+# ─────────────────────────────────────────────────────────────
+# MicroBit — Hello World Logger
+# Repo root = /Users/caden/Documents/MicroBit
+# ─────────────────────────────────────────────────────────────
+
+# ── pxt / MakeCode 工具鏈同 build output ──
+# 重點：makecode/node_modules/ 係 pxt-microbit target，成 544 MB，
+# 係由 `pxt target microbit` 裝出嚟嘅，任何人 clone 完自己裝返就得。
+node_modules/
+pxt_modules/
+built/
+.pxt/
+yotta_modules/
+yotta_targets/
+_site/
+*.db
+*.tgz
+.header.json
+.simstate.json
+Gemfile.lock
+
+# 想連可 flash 嘅 built/binary.hex 都 commit 埋（等人唔使裝 toolchain 都 flash 到）？
+# 將上面 `built/` 改成下面兩行：
+#   built/*
+#   !built/binary.hex
+# ⚠️ 同時要刪走 makecode/hello-microbit/.gitignore 入面嗰行 `built`
+#    （pxt 自動生成嗰個 .gitignore 比 root 優先，唔刪走嘅話上面嘅例外唔會生效）
+
+# ── Node / npm ──
+npm-debug.log*
+yarn-error.log*
+yarn-debug.log*
+.pnpm-debug.log*
+
+# ── Python ──
+# main.py 係舊 MicroPython 版本（已棄用），原始碼本身照 commit；
+# 下面呢啲係本機跑 script 時先會產生嘅嘢。
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# ── macOS ──
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# ── 編輯器 / IDE ──
+# makecode/hello-microbit/.vscode/ 係 pxt 生成嘅（extensions.json + settings.json），
+# 冇 project 專屬設定，任何人開檔 pxt 都會自動生成返，唔使 commit。
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Log ──
+*.log
+Log.txt
