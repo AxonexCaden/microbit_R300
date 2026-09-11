@@ -10,6 +10,11 @@ namespace r300 {
     // R300's own firmware version, from the `fw` field of its `hello`.
     export let peerFw = ""
 
+    // Called for every ack that survives the envelope, ck and v checks, so a sender can be
+    // woken by the reply it is waiting for. A no-op until r300.ts's sender installs it — a
+    // plain function rather than a nullable one so no caller needs an undefined check.
+    export let onReply: (id: number, op: string, p: any) => void = function (id: number, op: string, p: any) { }
+
     export function checksum256(s: string, len: number): number {
         let sum = 0
         for (let i = 0; i < len; i++) sum += s.charCodeAt(i)
@@ -82,8 +87,12 @@ namespace r300 {
         if (lastIndexOf(line, ",\"ck\":") < 0) return ""
         if (!verifyCk(line)) return canReply ? buildLine("ack", id, op, "{\"st\":\"err\",\"e\":\"badck\"}") : ""
         if (msg["v"] !== PROTOCOL_VERSION) return canReply ? buildLine("ack", id, op, "{\"st\":\"err\",\"e\":\"badver\"}") : ""
-        // Valid ack/fin land here too: answering either would ping-pong forever.
-        if (!canReply) return ""
+        // Valid ack/fin land here too: answering either would ping-pong forever (§6). An ack
+        // is also the one thing a sender waiting on this id wants to hear about.
+        if (!canReply) {
+            if (t == "ack" && idOk && typeof op == "string") onReply(id, op, msg["p"])
+            return ""
+        }
         if (op == "live") return buildLine("ack", id, op, "{\"st\":\"ok\"}")
         if (op == "hello") {
             const p = msg["p"]

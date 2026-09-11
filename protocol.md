@@ -216,7 +216,7 @@ R300 主動：開機之後每 500ms 發一次，直到 micro:bit 答。Session �
 - 表情**一直保持**，直到有新表情（或者 R300 自己狀態轉換）蓋過佢。
 - 最長嘅名（`disconnected`，`id` 127）係 80 bytes。
 
-### 9.4 `leg_set` —— micro:bit → R300（**R300 側已實作**；micro:bit 側等 sender）
+### 9.4 `leg_set` —— micro:bit → R300（**兩邊都實作**；micro:bit 側暫時係測試用嘅 `r300.motor()`）
 
 ```
 {"v":1,"id":42,"t":"req","op":"leg_set","p":{"rot":0,"fwd":100,"ms":1000},"ck":48}
@@ -234,7 +234,7 @@ R300 主動：開機之後每 500ms 發一次，直到 micro:bit 答。Session �
 - R300 **郁之前**就回 `ack`——`{"st":"ok"}` 代表「收咗」，唔代表「郁完」。幾時停係由 `ms` 話事。
 - R300 實際送 `x<rot/100> y<fwd/100> t<ms>` 落 motor board（`rot`→x、`fwd`→y），停車就係 `x0.0 y0.0`。⚠️ 呢條 motor UART **冇 terminator**，一句跟一句咁黐埋係已知風險。
 
-### 9.5 `arm_set` —— micro:bit → R300（**R300 側已實作**；micro:bit 側等 sender）
+### 9.5 `arm_set` —— micro:bit → R300（**兩邊都實作**；micro:bit 側暫時係測試用嘅 `r300.arm()`）
 
 ```
 {"v":1,"id":43,"t":"req","op":"arm_set","p":{"a1":100,"a2":50},"ck":178}

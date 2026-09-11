@@ -154,13 +154,31 @@ serial.setTxBufferSize(128)
 
 ## `r300.ts` 提供咩 Block？
 
-得一個：
+**Block 得一個：**
 
 | Block | TypeScript | 用途 |
 |---|---|---|
 | `connect to R300` | `r300.connect(): void` | 開機（`on start`）做一次：redirect serial 去 P0/P1、加大 buffer、註冊 RX handler |
 
-**點解得一個**：v1 方向係 R300 主導，micro:bit 唔需要 sender（冇 id 分配、冇 retry、冇 queue、冇 timeout 計時器）——成個 extension 就係「收到一行 → 回一行」。舊版嗰四個 block（`sendMessage`／`testLink`／`controlMotor`／`isConnected`）建基於「micro:bit 主動送」，方向反轉之後全部唔再成立，已經拆咗。
+**另外有幾個 TypeScript function—— 特登未有 `//%`，所以 Blocks 畫面唔會見到（寫嚟試 motor 用）：**
+
+| Function | 做咩 |
+|---|---|
+| `r300.motor(rot, fwd, ms): string` | 腿。`rot`／`fwd` = -100..100（100 = 全速）、`ms` = 0..3000。兩者都 0 = 停車 |
+| `r300.arm(a1, a2): string` | 手。`a1` = 右手、`a2` = 左手，physical 0..180（0 指前、90 向下、180 指後）；傳 **-1 = 唔都嗰隻手** |
+| `r300.send(op, pJson): string` | 通用版，自己砌 payload |
+
+回傳值係 R300 答乜：`"ok"`／`"badarg"`／`"noop"`／`"badver"`／`"busy"`／`"timeout"`／`"long"`（行太長，唔會送出）。🔴 **`"ok"` 只代表 R300 收咗，唔代表已經都完** —— 呢條 link 上面根本睇唔到物理結果。
+
+```ts
+input.onButtonPressed(Button.A, function () {
+    basic.showString(r300.motor(0, 50, 1000))   // 半速向前 1 秒，結果顯示喺 LED 矩陣
+})
+```
+
+⚠️ 呢個 sender **係測試用**，唔係最終 library 嘅形狀：佢係**阻塞式**（`basic.pause(1)` polling，最多等 3 × 500ms），最終應該係背景 fiber + 最新取代。傳送規則跟足合約：一次一個 request、每次新 `id`、超時／`badck` 用**同一個 `id` 重送**（所以 R300 分得出係重送、唔會郁兩次）。
+
+⚠️ 舊版嗰四個 block（`sendMessage`／`testLink`／`controlMotor`／`isConnected`）建基於 v0，已經拆唨。
 
 ⚠️ `connect()` 回傳 `void`（舊版回 `R300Link`）—— **特登嘅**：有回傳值嘅 function 喺 Blocks 畫面會變成橢圓形 reporter block，只可以插入其他 block 個窿，拖唔入 `on start`。
 
