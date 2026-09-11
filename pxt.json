@@ -9,6 +9,7 @@
     },
     "files": [
         "README.md",
+        "protocol.ts",
         "r300.ts"
     ],
     "testFiles": [
