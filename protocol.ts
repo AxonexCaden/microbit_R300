@@ -3,6 +3,12 @@ namespace r300 {
     export const PROTOCOL_VERSION = 1
     // R300's line buffer is 128 bytes including the terminator.
     export const MAX_LINE_BYTES = 127
+    // What R300 logs as `ext`. Keep in step with pxt.json's "version", and keep
+    // it inside 23 chars ([A-Za-z0-9._+-]) -- R300 truncates past that and the
+    // test vectors in protocol.md assume it.
+    export const EXT_VERSION = "0.1.0"
+    // R300's own firmware version, from the `fw` field of its `hello`.
+    export let peerFw = ""
 
     export function checksum256(s: string, len: number): number {
         let sum = 0
@@ -70,11 +76,20 @@ namespace r300 {
         const idOk = typeof id == "number" && id >= 0 && id <= 255 && id == Math.floor(id)
         const canReply = t === "req" && idOk && typeof op == "string" && isToken(op)
 
+        // No ,"ck": marker at all -> not a line this protocol produced (v0 noise,
+        // truncation). §7 #2 says drop it, and badck would be a retry hint to a
+        // sender that does not understand this envelope anyway.
+        if (lastIndexOf(line, ",\"ck\":") < 0) return ""
         if (!verifyCk(line)) return canReply ? buildLine("ack", id, op, "{\"st\":\"err\",\"e\":\"badck\"}") : ""
         if (msg["v"] !== PROTOCOL_VERSION) return canReply ? buildLine("ack", id, op, "{\"st\":\"err\",\"e\":\"badver\"}") : ""
         // Valid ack/fin land here too: answering either would ping-pong forever.
         if (!canReply) return ""
         if (op == "live") return buildLine("ack", id, op, "{\"st\":\"ok\"}")
+        if (op == "hello") {
+            const p = msg["p"]
+            if (p !== undefined && p !== null && typeof p["fw"] == "string") peerFw = p["fw"]
+            return buildLine("ack", id, op, "{\"st\":\"ok\",\"ext\":\"" + EXT_VERSION + "\"}")
+        }
         return buildLine("ack", id, op, "{\"st\":\"err\",\"e\":\"noop\"}")
     }
 }
