@@ -1,10 +1,10 @@
 # ─────────────────────────────────────────────────────────────
-# MicroBit — Hello World Logger
+# microbit_R300 — R300 UART link MakeCode extension
 # Repo root = /Users/caden/Documents/MicroBit
 # ─────────────────────────────────────────────────────────────
 
 # ── pxt / MakeCode 工具鏈同 build output ──
-# 重點：makecode/node_modules/ 係 pxt-microbit target，成 544 MB，
+# 重點：node_modules/ 係 pxt-microbit target，成 544 MB，
 # 係由 `pxt target microbit` 裝出嚟嘅，任何人 clone 完自己裝返就得。
 node_modules/
 pxt_modules/
@@ -23,8 +23,6 @@ Gemfile.lock
 # 將上面 `built/` 改成下面兩行：
 #   built/*
 #   !built/binary.hex
-# ⚠️ 同時要刪走 makecode/hello-microbit/.gitignore 入面嗰行 `built`
-#    （pxt 自動生成嗰個 .gitignore 比 root 優先，唔刪走嘅話上面嘅例外唔會生效）
 
 # ── Node / npm ──
 npm-debug.log*
@@ -33,7 +31,7 @@ yarn-debug.log*
 .pnpm-debug.log*
 
 # ── Python ──
-# main.py 係舊 MicroPython 版本（已棄用），原始碼本身照 commit；
+# legacy/main.py 係舊 MicroPython 版本（已棄用），原始碼本身照 commit；
 # 下面呢啲係本機跑 script 時先會產生嘅嘢。
 __pycache__/
 *.py[cod]
@@ -54,7 +52,7 @@ env/
 .fseventsd
 
 # ── 編輯器 / IDE ──
-# makecode/hello-microbit/.vscode/ 係 pxt 生成嘅（extensions.json + settings.json），
+# .vscode/ 係 pxt 生成嘅（extensions.json + settings.json），
 # 冇 project 專屬設定，任何人開檔 pxt 都會自動生成返，唔使 commit。
 .vscode/
 .idea/

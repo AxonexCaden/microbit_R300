@@ -1,6 +1,6 @@
 # MicroBit ↔ R300 UART Link
 
-用 MakeCode JavaScript（Static TypeScript）喺 BBC micro:bit 上面，每 1 秒經 UART 送一次 **link self-test** 去 R300，一個 round trip 拆成三段，全部喺 R300 個 console 睇得到：
+用 MakeCode JavaScript（Static TypeScript）喺 BBC micro:bit 上面，由 `test.ts` 個 demo loop 每 1 秒經 UART 送一次 **link self-test** 去 R300，一個 round trip 拆成三段，全部喺 R300 個 console 睇得到：
 
 ```
 ① micro:bit → R300    {"MB_cmd":"test","checksum":192}          ← 1s heartbeat
@@ -45,13 +45,13 @@
 呢個 project 用 `serial.redirect(SerialPin.P0, SerialPin.P1, BaudRate.BaudRate115200)`：
 - 冇 call 呢個 function 之前，serial 預設行**內部 USB-UART**（同 `console.log`/USB serial 同一組線）
 - Call 咗之後，serial 轉去 **P0（TX）/ P1（RX）**，駁去 R300（P0 → R300 GPIO21，P1 ← R300 GPIO10）
-- **開機撳住 Button A 就會跳過 redirect，留喺 USB**——呢個係我哋自己加落 `main.ts` 嘅 dev 用逃生門，等你唔使成日重燒 firmware 都可以睇 log／再部署
+- **開機撳住 Button A 就會跳過 redirect，留喺 USB**——呢個係我哋自己加落 `r300.ts` 嘅 dev 用逃生門，等你唔使成日重燒 firmware 都可以睇 log／再部署
 
 ✅ **P0/P1 ↔ GPIO21/GPIO10 呢個配對已經喺 R300 自己嘅開機 log 度得到確認**（本機 capture 咗一句，就係下面呢句）：
 ```
 I (83) MicrobitLink: ready: port=0 tx=10 rx=21 baud=115200
 ```
-即係 R300 呢邊 UART port 0：TX=GPIO10（接落 micro:bit 嘅 P1/RX），RX=GPIO21（收 micro:bit 嘅 P0/TX）。同我哋 `main.ts` 個 comment 一致，唔再係淨係睇 `aimo_v1_edu_microbit_board.cc` 個 comment 推測。
+即係 R300 呢邊 UART port 0：TX=GPIO10（接落 micro:bit 嘅 P1/RX），RX=GPIO21（收 micro:bit 嘅 P0/TX）。同我哋 `r300.ts` 個 comment 一致，唔再係淨係睇 `aimo_v1_edu_microbit_board.cc` 個 comment 推測。
 
 ## R300 係咩
 
@@ -80,7 +80,7 @@ micro:bit (P1 RX) ←────────── R300 (GPIO10 TX, UART port=0
 
 | # | 送出（micro:bit → R300） | 回覆（R300 → micro:bit） | 觸發者 |
 |---|---|---|---|
-| 1 | `{"MB_cmd":"test","checksum":192}` | `{"MB_cmd_ack":"success","checksum":192}` | `basic.forever()` 每 1000ms 自動 |
+| 1 | `{"MB_cmd":"test","checksum":192}` | `{"MB_cmd_ack":"success","checksum":192}` | `test.ts` 個 `basic.forever()` 每 1000ms 自動 |
 | 2 | `{"MicroBit":"<text>","checksum":<n>}` | `{"MicroBit_ack":"success","checksum":<n>}` | `r300Link.sendMessage(text)` |
 | 3 | `{"cmd":"control_motor","rotation":<f>,"forward":<f>,"time":<ms>,"checksum":<n>}` | `{"control_motor_ack":"success","checksum":<n>}` | `r300Link.controlMotor(...)` |
 
@@ -90,7 +90,7 @@ micro:bit (P1 RX) ←────────── R300 (GPIO10 TX, UART port=0
   - `checksum("test")` = `(116+101+115+116) % 256` = **192**
   - `checksum("Hello World!")` = **61**
 - **R300 嗰邊啲 checksum 唔啱或者格式壞咗**，就會 log `not a JSON object` 然後掉棄該行。
-- 注意 `control_motor` 嘅 checksum **唔係** checksum 成個 JSON，而係 checksum 佢自己砌嘅 `"%.2f,%.2f,%d"` 字串（例如 `-0.50,0.25,1000`）。所以 `main.ts` 特登寫咗個 `toFixed2()` 去夾硬砌出 byte-for-byte 一樣嘅文字，唔可以直接用 `number.toFixed()`（MakeCode 嘅 `number` 係 `double`，冇 `.toFixed()`）。
+- 注意 `control_motor` 嘅 checksum **唔係** checksum 成個 JSON，而係 checksum 佢自己砌嘅 `"%.2f,%.2f,%d"` 字串（例如 `-0.50,0.25,1000`）。所以 `r300.ts` 特登寫咗個 `toFixed2()` 去夾硬砌出 byte-for-byte 一樣嘅文字，唔可以直接用 `number.toFixed()`（MakeCode 嘅 `number` 係 `double`，冇 `.toFixed()`）。
 - micro:bit 收到 ack 之後淨係**記低時間**（`lastAckTime`），唔會自動回覆 —— 除咗上面講嗰個 `diag_ack`。否則兩塊板會互 ack 到永遠。
 
 ### 🔴 一定要加大 serial buffer（MakeCode 預設得 20 bytes）
@@ -108,19 +108,19 @@ serial.setTxBufferSize(128)
 
 揀 128 係因為 R300 嗰邊 `MicrobitLink` 個 RX 行上限同樣係 128 bytes。個參數型別係 `uint8`（上限 255），但加大過 128 冇意義，因為 R300 一樣頂唔住更長嘅行。
 
-## `main.ts` 提供咩 Block？
+## `r300.ts` 提供咩 Block？
 
-`main.ts` 入面所有 `//%` annotated 嘅 function 都會喺 MakeCode Blocks 畫面出現（底層 `serial.onDataReceived` 呢啲實作細節就特登冇 annotation，所以唔會喺 Blocks 度噪住你）。
+`r300.ts` 入面所有 `//%` annotated 嘅 function 都會喺 MakeCode Blocks 畫面出現（底層 `serial.onDataReceived` 呢啲實作細節就特登冇 annotation，所以唔會喺 Blocks 度噪住你）。
 
 | Block | TypeScript | 用途 |
 |---|---|---|
 | `connect to R300` | `r300.connect(): R300Link` | 開機做一次：redirect serial 去 P0/P1、加大 buffer、註冊 RX handler |
 | `%this send message %text to R300` | `sendMessage(text: string): void` | 送一段自由文字，包成 `MicroBit` JSON |
-| `%this test R300 link` | `testLink(): void` | 送一次三段自檢（`MB_cmd`）。主 loop 就係每秒叫呢個 |
+| `%this test R300 link` | `testLink(): void` | 送一次三段自檢（`MB_cmd`）。`test.ts` 個 loop 就係每秒叫呢個 |
 | `%this R300 connected` | `isConnected(): boolean` | 最近 3000ms 內有冇收過任何 ack —— 即係 R300 拔咗／熄咗／仲開緊機就會變 `false` |
 | `%this move rotation %rotation forward %forward for %time ms` | `controlMotor(rotation, forward, time): boolean` | 郁 R300 底盤。`rotation`／`forward` 係 `-1..1`（最大速度嘅比例），`time` 係 `0..3000` ms |
 
-`controlMotor()` 嘅回傳值要小心理解：佢代表 **R300 有冇接受個指令**，唔係「郁完未」——因為 R300 係**收完即回 ack，之後先至郁**。Timeout 500ms；如果收唔到 ack，或者收到嘅 checksum 對唔上（即係收到上一個 call 嘅殘留 ack）就回 `false`。唔理回傳值直接當 statement 用都安全。
+`controlMotor()` 嘅回傳值要小心理解：佢代表 **R300 有冇接受個指令**，唔係「郁完未」——因為 R300 係**收完即回 ack，之後先至郁**。Timeout 500ms；如果收唔到 ack，或者收到嘅 checksum 對唔上（即係收到上一個 call 嘅殘留 ack）就回 `false`。喺 TypeScript 入面唔理回傳值直接當 statement 用都安全；⚠️ **但喺 Blocks 畫面做唔到**——有回傳值嘅 function 會變成橢圓形 reporter block，只可以插入其他 block 個窿，拖唔入 `on start`／`forever`。
 
 ## Software Version
 
@@ -135,44 +135,40 @@ serial.setTxBufferSize(128)
 ## Project 結構
 
 ```
-MicroBit/
-├── .gitignore                    ← repo 層嘅 gitignore，下面「Version Control」有講
-├── README.md
-├── main.py                       ← ⚠️ 舊 MicroPython 版本，已棄用，淨係留返做歷史記錄
+microbit_R300/                    ← repo root 本身就係 MakeCode extension
+├── pxt.json                      ← extension manifest（dependencies: core / radio / microphone）
+├── r300.ts                       ← ⭐ library：`r300` namespace + 全部 block
+├── test.ts                       ← 本機測試 demo loop（`testFiles`，唔會跟去學生 project）
+├── tsconfig.json                 ← pxt build 用（pxt 自動生成）
+├── package.json                  ← 釘住 pxt-microbit target 版本
+├── README.md                     ← 同時係 MakeCode extension 說明頁
+├── .gitignore
+├── legacy/
+│   └── main.py                   ← ⚠️ 舊 MicroPython 版本，已棄用，淨係留返做歷史記錄
 ├── Log.txt                       ← 本機 capture 嘅 R300 monitor log（唔 commit）
-└── makecode/                     ← pxt workspace
-    ├── package.json              ← 釘住 pxt-microbit target 版本
-    ├── node_modules/             ← ⚠️ 544 MB，pxt-microbit target 檔案（唔 commit）
-    └── hello-microbit/           ← 實際 project，主要改嘢喺呢度
-        ├── main.ts               ← ⭐ source of truth，單一檔案，改程式邏輯喺呢個檔案
-        ├── main.blocks           ← Blocks 畫面嘅 layout
-        ├── pxt.json              ← dependencies (core / radio / microphone)
-        ├── tsconfig.json         ← pxt build 用
-        ├── Gemfile / _config.yml / Makefile / README.md
-        │                         ← 全部係 `pxt init` 生成嘅空樣板，冇改過
-        ├── .gitignore            ← pxt 自動生成
-        ├── pxt_modules/          ← 安裝落嚟嘅 dependencies（唔 commit）
-        └── built/
-            └── binary.hex        ← build 出嚟嘅嘢，flash 呢個（唔 commit）
+├── node_modules/                 ← ⚠️ 544 MB，pxt-microbit target 檔案（唔 commit）
+├── pxt_modules/                  ← 安裝落嚟嘅 dependencies（唔 commit）
+└── built/
+    └── binary.hex                ← build 出嚟嘅嘢，flash 呢個（唔 commit）
 ```
 
 ## Version Control
 
 Repo：**https://github.com/AxonexCaden/microbit_R300**
 
-Clone 落嚟只有 ~14 個檔案、~400 KB，因為所有生成物都已經 gitignore：
+Clone 落嚟只有 ~9 個檔案、~400 KB，因為所有生成物都已經 gitignore：
 
 | 唔 commit 嘅嘢 | 大細 | 點解 |
 |---|---|---|
-| `makecode/node_modules/` | 544 MB | pxt-microbit target 本身，clone 完自己 `pxt target microbit` 裝返 |
-| `makecode/hello-microbit/pxt_modules/` | ~1 MB | `pxt install` 自動裝返 |
-| `makecode/hello-microbit/built/` | ~3 MB | `pxt build` 生成 |
-| `makecode/hello-microbit/.vscode/` | 幾百 B | pxt 生成嘅本機 editor 設定，開一次 folder 就會自動重新生成 |
+| `node_modules/` | 544 MB | pxt-microbit target 本身，clone 完自己 `pxt target microbit` 裝返 |
+| `pxt_modules/` | ~1 MB | `pxt install` 自動裝返 |
+| `built/` | ~3 MB | `pxt build` 生成 |
+| `.vscode/` | 幾百 B | pxt 生成嘅本機 editor 設定，開一次 folder 就會自動重新生成 |
 | `Log.txt` | — | 本機 capture，唔屬於 source |
 
-⚠️ **`makecode/hello-microbit/.gitignore` 係 pxt 自動生成嘅，入面都有行 `built`。** 想連 `built/binary.hex` 都 commit（方便人唔使裝 toolchain 都 flash 到）嘅話，兩邊都要改：root `.gitignore` 要改成 `built/*` + `!built/binary.hex`，而且**同時要刪走 `hello-microbit/.gitignore` 入面嗰行 `built`** —— 因為 nested `.gitignore` 優先過 root，唔刪走嘅話例外唔會生效。
+想連 `built/binary.hex` 都 commit（方便人唔使裝 toolchain 都 flash 到）嘅話，將 root `.gitignore` 嘅 `built/` 改成 `built/*` + `!built/binary.hex` 就得——以前要同時改埋一個 pxt 自動生成嘅嵌套 `.gitignore`，搬去 repo root 之後已經冇咗嗰個檔。
 
-`main.ts` 特登保持單一檔案（將 `r300` namespace／`R300Link` class 同埋主程式邏輯全部放埋一齊），方便直接成個檔案 post 上 makecode.microbit.org 或者傳俾第二個人——`//%` block annotation 唔理個 code 擺喺邊個檔案都照樣生效，所以合併咗都唔影響 Blocks 畫面隱藏底層 `serial.onDataReceived` 呢個設計目的。
+Library 同 demo 分開兩個檔：`r300.ts` 係 extension 本體（`r300` namespace），`test.ts` 係本機測試嘅 `basic.forever` loop。`test.ts` 喺 `pxt.json` 列做 `testFiles`——只會喺呢個 repo 自己做 top-level project build 嗰陣先 compile，學生 add extension 嗰陣唔會跟入去，所以唔會喺每個學生 project 偷偷行起一個每秒 heartbeat。
 
 ## corepkg 支援咩 library？
 
@@ -201,7 +197,7 @@ Clone 落嚟只有 ~14 個檔案、~400 KB，因為所有生成物都已經 giti
 
 ### 想用多啲功能？呢啲要自己加落 `pxt.json` 先有（唔係 corepkg 自動帶）
 
-`pxtarget.json` 嘅 `bundleddirs` 仲有呢幾個現成 package，但要自己喺 `pxt.json` 嘅 `dependencies` 加先會編譯落去（我哋而家個 `pxt.json` 已經帶埋 `radio` 同 `microphone`，係 `pxt init` 自動加嘅，暫時未用到）：
+`pxtarget.json` 嘅 `bundleddirs` 仲有呢幾個現成 package，但要自己喺 `pxt.json` 嘅 `dependencies` 加先會編譯落去（我哋個 `pxt.json` 帶埋 `radio` 同 `microphone`，code 冇用到但係**特登保留**——剷走會令 build 卡死喺雲端 compile，見「點 Clone 同 Build」嗰個 ⚠️）：
 
 `radio`（micro:bit 之間 2.4GHz 通訊）、`bluetooth`、`servo`、`microphone`（V2 咪高峰）、`datalogger`（用 `MY_DATA.HTM` 嗰個內建 data logging 功能）、`flashlog`、`bitmap`、`fonts`、`color`、`audio-recording`、`audio-samples`、`settings`。
 
@@ -214,31 +210,34 @@ cd microbit_R300
 
 npm install -g pxt        # pxt CLI，全域裝一次就夠
 
-cd makecode
 npm install               # 裝返 pxt-microbit target（~544 MB，所以要等一下）
 pxt target microbit
+pxt install               # 裝 pxt_modules（core / radio / microphone）
 ```
 
-之後每次改完 `main.ts`，喺 project 資料夾入面 build：
+之後每次改完 `r300.ts` / `test.ts`，喺 repo root build：
 ```bash
-cd makecode/hello-microbit
 pxt build
 ```
 成功嘅話 `built/binary.hex` 會更新。
+
+⚠️ **`pxt.json` 嘅 `radio` / `microphone` 睇落冇用，但唔好剷。** pxt-microbit 只替固定幾個 dependency 組合預先 compile 咗 native hex（`node_modules/pxt-microbit/built/hexcache/`，得 4 個）。`core + radio + microphone` 係 `pxt init` 預設組合，命中 cache，build 幾秒完成；剷走佢哋就冇預製 hex，pxt 會改去叫 Microsoft 雲端 compile，實測卡死喺一條 HTTPS request 超過 5 分鐘都唔返。
 
 ## 點 Flash
 
 ⚠️ **`pxt deploy` 喺呢部 macOS 版本（Sequoia）有已知 bug，唔穩定，唔好用。** 改用最原始、最穩陣嘅方法——直接拖個 build 好嘅 `.hex` 落 `MICROBIT` 磁碟機（DAPLink 經 SWD 燒，同板上行緊咩程式完全無關，一定成功）：
 
 ```bash
-cp makecode/hello-microbit/built/binary.hex /Volumes/MICROBIT/
+cp built/binary.hex /Volumes/MICROBIT/
 ```
 
 Copy 完等幾秒，board 會自動 flash 同重新掛載（`cp` 可能會噴一句 `could not copy extended attributes` 嘅 warning，可以忽略，唔影響檔案內容）。
 
+⚠️ **`cp` 有時會睇落卡死唔返**——DAPLink 燒到一半會主動 unmount 隻碟，macOS 個 `cp` 就喺 flush 嗰步等。其實多數已經燒咗入去（隻碟重新掛載、冇 `FAIL.TXT` 就係成功）。最穩陣係用 Finder 直接拖 `built/binary.hex` 落 `MICROBIT`。
+
 ## 點睇 Log
 
-因為 `main.ts` 預設會將 serial redirect 去 P0/P1，睇 log 分兩種情況：
+因為 `r300.ts` 預設會將 serial redirect 去 P0/P1，睇 log 分兩種情況：
 
 **情況一：正常運作（睇 R300 收到啲乜）**
 
@@ -279,7 +278,7 @@ mpremote connect /dev/cu.usbmodem1102 repl
 1. **Serial buffer 冇加大**（見上面「一定要加大 serial buffer」）——最常見，而且純軟件問題
 2. **實體回程線 `P1 ← GPIO10` 冇駁 / 駁錯**——記住兩邊要**交叉**：`P0 → GPIO21`、`P1 ← GPIO10`，仲要共地
 
-分辨方法：去程線係好嘅（唔係嘅話 R300 連 `<-` 都唔會見到），所以剩返「buffer」同「回程線」。先 confirm `connect()` 入面兩句 `setRxBufferSize`/`setTxBufferSize` 仲喺度、`pxt build` 真係行過（唔係改咗 `main.ts` 但冇 rebuild），再查線。
+分辨方法：去程線係好嘅（唔係嘅話 R300 連 `<-` 都唔會見到），所以剩返「buffer」同「回程線」。先 confirm `connect()` 入面兩句 `setRxBufferSize`/`setTxBufferSize` 仲喺度、`pxt build` 真係行過（唔係改咗 `r300.ts` 但冇 rebuild），再查線。
 
 ### 之前撞過嘅亂碼／冇反應：而家知道係「開機時序」居多，唔一定關 wiring 事
 
@@ -289,7 +288,9 @@ mpremote connect /dev/cu.usbmodem1102 repl
    - **做法**：兩部板一齊開機嘅話，唔使太緊張頭幾秒嘅亂碼／冇反應，等 R300 log 出現 `R300 ready, now accepting messages` 之後先判斷通訊係咪有問題。
    - 呢個窗口入面 `r300Link.isConnected()` 會回 `false`，係**預期行為**，唔係 bug —— 要等 R300 開完機覆到 ack 先會變 `true`。
 2. 個 log 仲見到 `--- Error: device reports readiness to read but returned no data (device disconnected or multiple access on port?)`——呢句同我哋自己用 pyserial 讀 port 撞過嘅錯誤一模一樣，但呢次係喺 **R300 官方自己嘅 `idf_monitor.py`** 入面出現，即係話呢個係 ESP32-S3 native USB JTAG/serial 呢個介面本身嘅已知小毛病，唔關我哋個 flow 事。見到呢個 error 唔使懷疑係自己整壞咗嘢，等幾秒 port 通常會自動重連。
+3. **開機嗰下會有一堆 request 一次過湧入，睇到唔使驚。** micro:bit 開機快過 R300 ~12 秒，呢段時間佢照樣每秒送，全部囤喺 R300 個 UART buffer；R300 一 ready 就一次過倒晒出嚟——實測 **12 個 `MB_cmd` 喺 100ms 內**到齊，R300 逐個回 `MB_cmd_ack`，micro:bit 再回 12 個 `diag_ack`，之後先變返每秒一轉。⚠️ 呢度有個而家 protocol 解決唔到嘅問題：12 個 ack 全部係 `checksum 192`，micro:bit **根本分唔到邊個 ack 對應邊個 request**——今次冇事只係因為 12 個都係同一個 `test`。如果係唔同指令（前進、轉左…）就會靜靜雞配錯。要真正解決要喺 message 加一個獨立嘅 request `id`，checksum 做唔到（佢係內容嘅 hash，同一句送十次十次都一樣）。
+4. **`idf_monitor` 開頭噴 `Warning: Checksum mismatch between flashed and built applications` 唔關通訊事**——意思係 R300 板上行緊嘅 firmware 同你本機 `build/xiaozhi.elf` 唔係同一個 build（例如 `CompanionRobots` 嗰邊 pull 咗新 code 但未重燒 R300）。只會令 crash backtrace 解碼唔準，micro:bit link 照常運作。
 
-> ℹ️ 上面「90+ 個 cycle」嗰段係喺**舊 protocol**（每秒 `{"MicroBit":"Hello World!","checksum":61}`）之下 capture 嘅。本機嗰份 `Log.txt` 已經 gitignore、唔會跟 repo 走，而 R300 側邊嘅 ack 邏輯冇變過，所以個結論照樣適用。
+> ℹ️ 上面「90+ 個 cycle」嗰段係喺舊 protocol（每秒 `{"MicroBit":"Hello World!","checksum":61}`）之下 capture 嘅。**2026-09-11 喺而家嘅三段 protocol 下重新驗證過**：R300 喺 `12583ms` 講 ready，之後穩定期 11 個 cycle 間隔 **1020–1030ms**，每轉 `MB_cmd` → `diag_ack` 來回 **10–20ms**，全部嚴格 req → ack → diag 次序，零 `not a JSON`／`fail`。
 
 GND 共用依然係好嘅硬件實踐，值得檢查，但唔再係頭號嫌疑。

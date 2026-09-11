@@ -1,7 +1,7 @@
 {
-    "name": "hello-microbit",
-    "version": "0.0.0",
-    "description": "",
+    "name": "r300",
+    "version": "0.1.0",
+    "description": "Talk to the R300 companion robot over the P0/P1 UART link",
     "dependencies": {
         "core": "*",
         "radio": "*",
@@ -9,12 +9,14 @@
     },
     "files": [
         "README.md",
-        "main.blocks",
-        "main.ts"
+        "r300.ts"
+    ],
+    "testFiles": [
+        "test.ts"
     ],
     "public": true,
     "supportedTargets": [
         "microbit"
     ],
-    "preferredEditor": "blocksprj"
+    "preferredEditor": "tsprj"
 }
