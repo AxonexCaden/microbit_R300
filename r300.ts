@@ -40,6 +40,7 @@ namespace r300 {
     let waitId = -1
     let waitOp = ""
     let waitState = ""
+    let busy = false
 
     function noteReply(id: number, op: string, p: any): void {
         if (id != waitId || op != waitOp) return
@@ -57,8 +58,24 @@ namespace r300 {
      * A timeout or a badck resends the SAME id, so R300 recognises the repeat and replays
      * its ack instead of running the move twice.
      * It blocks (1ms sleeps) — fine for a test, not the shape the final library will have.
+     *
+     * Only ONE request may be in flight, and this is what enforces it. A and B are separate
+     * event handlers, so MakeCode runs them in separate fibers, and every basic.pause() below
+     * hands control to the other one. Two overlapping calls would share waitId/waitOp/waitState
+     * and each would answer to the other's ack: the first request then never matches its own
+     * reply and reports "timeout" for a command R300 actually carried out. R300's (id, op)
+     * dedupe stops it MOVING twice, so the damage is a wrong answer on the LED, not a wrong
+     * move — which is worse to debug, because it looks exactly like a broken link.
      */
     export function send(op: string, pJson: string): string {
+        if (busy) return "busy"
+        busy = true
+        const result = sendOne(op, pJson)
+        busy = false          // one release point: sendOne has three exits
+        return result
+    }
+
+    function sendOne(op: string, pJson: string): string {
         const id = nextId
         nextId = nextId >= 127 ? 0 : nextId + 1
         let last = "timeout"
