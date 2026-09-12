@@ -204,17 +204,34 @@ R300 主動：開機之後每 500ms 發一次，直到 micro:bit 答。Session �
 - 最長嘅 ack（`ext` 23 字、`id` 127）係 **96 bytes**（包 `\n`）。
 - 發送規則見第 8 節（R300 每 500ms 重試、冇上限；`hello` 嘅 ack 超時係 300ms）。
 
-### 9.3 `emo_set` —— micro:bit → R300（Phase 2a，**未實作**）
+### 9.3 `emo_set` —— micro:bit → R300（**兩邊都實作**）
 
 ```
 {"v":1,"id":1,"t":"req","op":"emo_set","p":{"emoji":"happy"},"ck":50}
 ```
 
-- `emoji`：表情名，小寫 `[a-z0-9_]`、最多 16 字。R300 **只驗格式，唔驗名單**——名單由 extension 個 dropdown 把關。
-- R300 將佢轉交顯示系統（同一條路轉去眼睛板），**唔會等眼睛板回覆**。
-- 🔴 **`{"st":"ok"}` = R300 收咗並且轉發咗，唔等於眼睛板播到。**
-- 表情**一直保持**，直到有新表情（或者 R300 自己狀態轉換）蓋過佢。
-- 最長嘅名（`disconnected`，`id` 127）係 80 bytes。
+- `emoji`：表情名，小寫 `[a-z_]`、最多 16 字。R300 **只驗格式，唔驗名單** —— 名單由 extension 個 dropdown 把關，唔想同一份名單住喺三個地方各自漂移。
+- R300 將佢交去 `Display::SetEmotion()`，再經現有 emotion sink 轉出眼睛板。**唔會加第二個 monitor writer**，亦**唔會等眼睛板回覆**。
+- 🔴 **`{"st":"ok"}` = R300 收咗並且轉發咗，唔等於眼睛板播到。** 等眼睛板回 `emotion_rsp` 要幾十 ms，喺 RX thread 度等就係 `live` 開始甩 ack 嘅配方。真正判決只可以喺 R300 log 睇。
+- 表情**一直保持**（sticky），直到有新表情或者 R300 自己狀態轉換蓋過佢。冇 `ms`、冇 auto-revert。
+
+**合約名單（19 個）** —— extension dropdown 出呢啲，其他一律唔應該送：
+
+```
+happy sad angry surprised shocked
+confused funny laughing silly crying
+embarrassed loving kissy winking cool
+confident suspicious relaxed delicious
+```
+
+點揀出嚟嘅：眼睛板三個 profile（floki／pengu／bduck）嘅 `gif_table` 分別有 27／27／29 個名，**交集 26 個**（唯一唔共通係 `sleepy`，bduck 冇）。交集再剔走 8 個**系統狀態名** —— `connecting` `disconnected` `listening` `neutral` `standby` `startup` `thinking` `sleepy` —— 淨低就係呢 19 個表情。
+
+⚠️ 三個唔應該放出去嘅理由，逐個唔同：
+- `disconnected`／`connecting`／`startup`／`listening`／`thinking`／`standby` —— **講大話**。學生揀「斷線中」唔會令部機真係斷線，個面同真實狀態對唔上。
+- `neutral` —— 部機 idle 嗰陣會被 `MonitorStateForwarder` **remap 做 `standby`**（即係 `sleepy` GIF），揀完根本唔係嗰個樣。
+- `sleepy` —— bduck profile 冇呢個 GIF，換咗角色就會收到 `unknown`。
+
+最長嘅名係 `embarrassed`（11 字），`id` 127 時成行 79 bytes。
 
 ### 9.4 `leg_set` —— micro:bit → R300（**兩邊都實作**；micro:bit 側暫時係測試用嘅 `r300.motor()`）
 
@@ -320,9 +337,9 @@ R300 -> mb : {"v":1,"id":202,"t":"req","op":"mcp_done","p":{"name":"wave","steps
 | live badck ack | 137 | 77 | `{"v":1,"id":128,"t":"ack","op":"live","p":{"st":"err","e":"badck"},"ck":137}` |
 | live badver ack | 8 | 76 | `{"v":1,"id":128,"t":"ack","op":"live","p":{"st":"err","e":"badver"},"ck":8}` |
 | hello ack 最長（`ext` 23 字、`id` 127） | 33 | 96 | `{"v":1,"id":127,"t":"ack","op":"hello","p":{"st":"ok","ext":"01234567890123456789012"},"ck":33}` |
-| emo_set req（2a） | 50 | 70 | `{"v":1,"id":1,"t":"req","op":"emo_set","p":{"emoji":"happy"},"ck":50}` |
-| emo_set ack ok（2a） | 164 | 65 | `{"v":1,"id":1,"t":"ack","op":"emo_set","p":{"st":"ok"},"ck":164}` |
-| emo_set badarg ack（2a） | 199 | 79 | `{"v":1,"id":1,"t":"ack","op":"emo_set","p":{"st":"err","e":"badarg"},"ck":199}` |
+| emo_set req | 50 | 70 | `{"v":1,"id":1,"t":"req","op":"emo_set","p":{"emoji":"happy"},"ck":50}` |
+| emo_set ack ok | 164 | 65 | `{"v":1,"id":1,"t":"ack","op":"emo_set","p":{"st":"ok"},"ck":164}` |
+| emo_set badarg ack | 199 | 79 | `{"v":1,"id":1,"t":"ack","op":"emo_set","p":{"st":"err","e":"badarg"},"ck":199}` |
 | leg_set req（2b） | 48 | 83 | `{"v":1,"id":42,"t":"req","op":"leg_set","p":{"rot":0,"fwd":100,"ms":1000},"ck":48}` |
 | arm_set req（3） | 178 | 73 | `{"v":1,"id":43,"t":"req","op":"arm_set","p":{"a1":100,"a2":50},"ck":178}` |
 | vol_set req | 130 | 64 | `{"v":1,"id":3,"t":"req","op":"vol_set","p":{"vol":70},"ck":130}` |

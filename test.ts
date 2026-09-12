@@ -30,6 +30,17 @@ input.onPinPressed(TouchPin.P2, function () {
     basic.showNumber(r300.lastVolume)
 })
 
+// Logo touch (micro:bit V2): step through a few faces on R300's monitor.
+// On the logo because A / B / A+B and P2 are all taken. No movement risk, so it is the
+// safest thing to try first on Monday — and it is the only test that walks the emo_set
+// path all the way out to the eyes.
+const kFaces = [r300.Emoji.Happy, r300.Emoji.Angry, r300.Emoji.Surprised, r300.Emoji.Loving]
+let faceIndex = 0
+input.onLogoEvent(TouchButtonEvent.Pressed, function () {
+    basic.showString(r300.emoji(kFaces[faceIndex]))
+    faceIndex = (faceIndex + 1) % kFaces.length
+})
+
 // B: move ONE hand, so this press answers "which hand is a1?".
 // Deliberately asymmetric: arm(90, 90) moves both to the same angle and therefore proves
 // only that both hands work — it cannot tell a1 from a2, which is the open question

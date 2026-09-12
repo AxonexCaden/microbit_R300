@@ -109,6 +109,98 @@ namespace r300 {
         return send("leg_set", "{\"rot\":" + rot + ",\"fwd\":" + fwd + ",\"ms\":" + ms + "}")
     }
 
+
+    /**
+     * The faces R300's monitor board can show. This list is the gate on what a student can
+     * send — R300 itself only checks the FORMAT, deliberately, so the vocabulary lives in
+     * one place instead of three.
+     *
+     * These 19 are the names present in ALL THREE monitor profiles (floki / pengu / bduck),
+     * so a robot built as a different character still knows every one. The other 8 names in
+     * the GIF table are system states (connecting / disconnected / listening / neutral /
+     * standby / startup / thinking / sleepy) and are left out on purpose: picking
+     * "disconnected" would not disconnect anything, `neutral` gets remapped to `standby`
+     * while the robot is idle so it would not even show the face you chose, and `sleepy` is
+     * missing from the bduck profile.
+     */
+    export enum Emoji {
+        //% block="happy"
+        Happy,
+        //% block="sad"
+        Sad,
+        //% block="angry"
+        Angry,
+        //% block="surprised"
+        Surprised,
+        //% block="shocked"
+        Shocked,
+        //% block="confused"
+        Confused,
+        //% block="funny"
+        Funny,
+        //% block="laughing"
+        Laughing,
+        //% block="silly"
+        Silly,
+        //% block="crying"
+        Crying,
+        //% block="embarrassed"
+        Embarrassed,
+        //% block="loving"
+        Loving,
+        //% block="kissy"
+        Kissy,
+        //% block="winking"
+        Winking,
+        //% block="cool"
+        Cool,
+        //% block="confident"
+        Confident,
+        //% block="suspicious"
+        Suspicious,
+        //% block="relaxed"
+        Relaxed,
+        //% block="delicious"
+        Delicious,
+    }
+
+    function emojiName(e: Emoji): string {
+        // A switch, not an array indexed by the enum: a lookup table sends the wrong face
+        // the first time somebody reorders the list, and says nothing about it.
+        switch (e) {
+            case Emoji.Happy: return "happy"
+            case Emoji.Sad: return "sad"
+            case Emoji.Angry: return "angry"
+            case Emoji.Surprised: return "surprised"
+            case Emoji.Shocked: return "shocked"
+            case Emoji.Confused: return "confused"
+            case Emoji.Funny: return "funny"
+            case Emoji.Laughing: return "laughing"
+            case Emoji.Silly: return "silly"
+            case Emoji.Crying: return "crying"
+            case Emoji.Embarrassed: return "embarrassed"
+            case Emoji.Loving: return "loving"
+            case Emoji.Kissy: return "kissy"
+            case Emoji.Winking: return "winking"
+            case Emoji.Cool: return "cool"
+            case Emoji.Confident: return "confident"
+            case Emoji.Suspicious: return "suspicious"
+            case Emoji.Relaxed: return "relaxed"
+            case Emoji.Delicious: return "delicious"
+        }
+        return "happy"
+    }
+
+    /**
+     * Show a face on R300's monitor (the eyes). Returns "ok" once R300 has ACCEPTED it.
+     * "ok" means R300 forwarded it, NOT that the face changed — R300 cannot promise the
+     * second without stalling the link. The face then stays until something else changes it.
+     */
+    //% blockId=r300_emoji block="show face %e"
+    //% weight=90
+    export function emoji(e: Emoji): string {
+        return send("emo_set", "{\"emoji\":\"" + emojiName(e) + "\"}")
+    }
     /**
      * Set the speaker volume, 0..100. Returns "ok" once R300 has ACCEPTED it.
      * R300 separately confirms that the level actually landed, and that value shows up in
