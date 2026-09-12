@@ -7,6 +7,10 @@ namespace r300 {
     // it inside 23 chars ([A-Za-z0-9._+-]) -- R300 truncates past that and the
     // test vectors in protocol.md assume it.
     export const EXT_VERSION = "0.1.0"
+
+    // Last volume R300 confirmed as APPLIED (via vol_done), or -1 if it never has.
+    // Not the value that was requested — that one is only known to have been accepted.
+    export let lastVolume = -1
     // R300's own firmware version, from the `fw` field of its `hello`.
     export let peerFw = ""
 
@@ -94,6 +98,14 @@ namespace r300 {
             return ""
         }
         if (op == "live") return buildLine("ack", id, op, "{\"st\":\"ok\"}")
+        // R300 raises this itself once the volume has actually landed (protocol.md 9.6).
+        // Nothing to do but confirm it: answering "noop" would make R300 log the whole
+        // two-stage path as failed even though the volume was set.
+        if (op == "vol_done") {
+            const vp = msg["p"]
+            if (vp !== undefined && vp !== null && typeof vp["vol"] == "number") lastVolume = vp["vol"]
+            return buildLine("ack", id, op, "{\"st\":\"ok\"}")
+        }
         if (op == "hello") {
             const p = msg["p"]
             if (p !== undefined && p !== null && typeof p["fw"] == "string") peerFw = p["fw"]

@@ -110,6 +110,16 @@ namespace r300 {
     }
 
     /**
+     * Set the speaker volume, 0..100. Returns "ok" once R300 has ACCEPTED it.
+     * R300 separately confirms that the level actually landed, and that value shows up in
+     * r300.lastVolume — "accepted" and "applied" are different claims and this link
+     * reports them separately.
+     */
+    export function volume(v: number): string {
+        return send("vol_set", "{\"vol\":" + v + "}")
+    }
+
+    /**
      * Move the hands. a1 = right hand, a2 = left hand, physical degrees 0..180
      * (0 = forward, 90 = down, 180 = back). Pass -1 for a hand to leave it alone: the key is
      * then left out of the request, because 0 is a real angle and cannot mean "don't move".
