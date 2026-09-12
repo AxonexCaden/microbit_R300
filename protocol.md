@@ -254,6 +254,52 @@ physical 角度：**0 = 指前、90 = 指向下、180 = 指後**。鏡像（邊�
 - 郁之前回 `ack`（同 9.4 一樣嘅語義）。
 - ⚠️ `a1`／`a2` ↔ 左右手嘅對應係**假設**（跟 servo 編號 1=右、2=左），要上機撳一次確認。
 
+### 9.6 `vol_set` / `vol_done` —— 音量（**兩邊都實作**）
+
+第一個有**兩段回覆**嘅 op。`ack` 一路以嚟只代表「R300 收咗」；馬達冇得講多過呢句（郁緊嗰陣 ack 早就返咗），但音量係同步寫得完嘅，所以 R300 講多一句。**佢唔係用一個新嘅 `t`** —— 而係用 envelope 本身容許嘅方法：R300 自己起一個 `req`。
+
+```
+mb   -> R300 : {"v":1,"id":3,"t":"req","op":"vol_set","p":{"vol":70},"ck":130}
+R300 -> mb   : {"v":1,"id":3,"t":"ack","op":"vol_set","p":{"st":"ok"},"ck":182}      ← 收咗
+R300 -> mb   : {"v":1,"id":201,"t":"req","op":"vol_done","p":{"vol":70},"ck":60}     ← 真係落咗
+mb   -> R300 : {"v":1,"id":201,"t":"ack","op":"vol_done","p":{"st":"ok"},"ck":112}
+R300 -> mb   : {"v":1,"id":201,"t":"fin","op":"vol_done","p":{"rtt":8},"ck":11}
+```
+
+| 欄位 | 值 |
+|---|---|
+| `vol` | **0..100** 整數百分比 |
+
+- 範圍唔啱 → `badarg`，**唔會 clamp**（同 9.4／9.5 一樣嘅規矩）。
+- 0..100 呢個範圍係同 R300 本身把聲控 tool（`self.audio_speaker.set_volume`）**夾硬對齊**嘅 —— 兩個入口收唔同嘢嘅話，學生用把聲設同用 micro:bit 設就會唔一致。
+- 🔴 **`vol_done` 唔保證一定嚟。** 佢冇 retry：音量無論點都已經設咗，而條 link 生唔生存係 `live` 話事，唔係佢。micro:bit 側**唔可以**靠等 `vol_done` 嚟決定下一步。
+- ⚠️ **最新取代（latest-wins）**：學生喺 `forever` 入面掃音量，R300 只會就**最後嗰個值**發一次 `vol_done`，唔會逐格回。
+
+### 9.7 `mcp_desc` / `mcp_take` / `mcp_done` —— 錄低一段動作，變成 AI 叫得郁嘅 tool（**R300 側實作**）
+
+學生自己寫嘅動作（`leg_set`／`arm_set`）可以錄低，然後喺 R300 註冊成一個 MCP tool，之後**用把口叫個名**就播得返。
+
+```
+mb -> R300 : {"v":1,"id":5,"t":"req","op":"mcp_desc","p":{"name":"wave","desc":"waves hello"},"ck":141}
+mb -> R300 : {"v":1,"id":6,"t":"req","op":"mcp_take","p":{"state":"start"},"ck":168}
+             …（其間所有被 R300 接受咗嘅 leg_set / arm_set 會逐句錄低）…
+mb -> R300 : {"v":1,"id":7,"t":"req","op":"mcp_take","p":{"state":"finish"},"ck":252}
+R300 -> mb : {"v":1,"id":202,"t":"req","op":"mcp_done","p":{"name":"wave","steps":6,"drop":0},"ck":170}
+```
+
+| op | `p` | 意思 |
+|---|---|---|
+| `mcp_desc` | `{"name":N,"desc":D}` | 記低名同描述。**同一個 `name` 再叫一次 = 將 `D` 駁落去後面**（長描述就係咁分幾句send）；換咗個 `name` 就由頭開始 |
+| `mcp_take` | `{"state":"start"}` | 開始錄。名要事先 `mcp_desc` 過 |
+| `mcp_take` | `{"state":"finish"}` | 收貨，註冊做 MCP tool `self.microbit.<name>` |
+| `mcp_done` | `{"name":N,"steps":S,"drop":M}` | R300 → micro:bit：真係註冊咗，共 `S` 步，掉咗 `M` 步 |
+
+- `name`：**1-16 個字元，淨係 `[a-z0-9_]`**。佢會變成 MCP tool 名俾 AI 用，所以唔可以有空格同大細楷。唔合法 → `badarg`。
+- 🔴 **`drop` 一定要睇。** 上限 **64 步**，超出嘅會照樣即時執行但**唔會錄入去**。唔報呢個數，一段被截斷咗嘅錄影同一段完整嘅錄影喺 micro:bit 側係一模一樣嘅。
+- 一行硬上限 127 bytes，所以 `mcp_desc` 一次最多帶到約 **34 個字**嘅 `desc`（`name` 用足 16 字、`id` 用 3 位數嗰個最壞情況）。描述長過呢個數就分幾次 `mcp_desc` send。
+- 空錄影（`start` 之後乜都冇做就 `finish`）→ `badarg`。未 `start` 就 `finish` → `badarg`。
+- ⚠️ **同名重錄：舞步即時更新，描述文字唔會。** R300 上面個 tool object 只註冊一次，而佢個描述欄位係上游 engine 嘅 private member、冇 setter（呢個係刻意決定：唔改 engine 檔）。所以改咗描述要**重開 R300** 先生效 —— R300 會喺 log 出 warning 講明，唔會扮咗當成功。舞步唔受影響，因為播嘅時候先去攞最新嗰段。
+
 ## 10. R300 開機
 
 - RX task 起嗰陣先 `uart_flush_input()`，清走 R300 未 ready 之前囤住嘅過時訊息。Phase 2 之後尤其重要：一句 10 秒前嘅郁指令喺 R300 開完機先執行，部機會突然自己郁。（v0 時期實測：R300 一 ready 就有 11–12 條喺 100ms 內湧入。）
@@ -279,6 +325,17 @@ physical 角度：**0 = 指前、90 = 指向下、180 = 指後**。鏡像（邊�
 | emo_set badarg ack（2a） | 199 | 79 | `{"v":1,"id":1,"t":"ack","op":"emo_set","p":{"st":"err","e":"badarg"},"ck":199}` |
 | leg_set req（2b） | 48 | 83 | `{"v":1,"id":42,"t":"req","op":"leg_set","p":{"rot":0,"fwd":100,"ms":1000},"ck":48}` |
 | arm_set req（3） | 178 | 73 | `{"v":1,"id":43,"t":"req","op":"arm_set","p":{"a1":100,"a2":50},"ck":178}` |
+| vol_set req | 130 | 64 | `{"v":1,"id":3,"t":"req","op":"vol_set","p":{"vol":70},"ck":130}` |
+| vol_set ack ok | 182 | 65 | `{"v":1,"id":3,"t":"ack","op":"vol_set","p":{"st":"ok"},"ck":182}` |
+| vol_set badarg ack | 217 | 79 | `{"v":1,"id":3,"t":"ack","op":"vol_set","p":{"st":"err","e":"badarg"},"ck":217}` |
+| vol_done req (R300) | 60 | 66 | `{"v":1,"id":201,"t":"req","op":"vol_done","p":{"vol":70},"ck":60}` |
+| vol_done ack (mb) | 112 | 68 | `{"v":1,"id":201,"t":"ack","op":"vol_done","p":{"st":"ok"},"ck":112}` |
+| vol_done fin (R300) | 11 | 65 | `{"v":1,"id":201,"t":"fin","op":"vol_done","p":{"rtt":8},"ck":11}` |
+| mcp_desc req | 141 | 91 | `{"v":1,"id":5,"t":"req","op":"mcp_desc","p":{"name":"wave","desc":"waves hello"},"ck":141}` |
+| mcp_take start req | 168 | 72 | `{"v":1,"id":6,"t":"req","op":"mcp_take","p":{"state":"start"},"ck":168}` |
+| mcp_take finish req | 252 | 73 | `{"v":1,"id":7,"t":"req","op":"mcp_take","p":{"state":"finish"},"ck":252}` |
+| mcp_done req (R300) | 170 | 91 | `{"v":1,"id":202,"t":"req","op":"mcp_done","p":{"name":"wave","steps":6,"drop":0},"ck":170}` |
+| mcp_done ack (mb) | 96 | 67 | `{"v":1,"id":202,"t":"ack","op":"mcp_done","p":{"st":"ok"},"ck":96}` |
 
 （舊表嗰兩條 `live req … "hs":1 / "hs":0`（`ck` 242／241）已經唔存在。`emo_set nohs ack` 亦冇咗。）
 
@@ -287,3 +344,5 @@ physical 角度：**0 = 指前、90 = 指向下、180 = 指後**。鏡像（邊�
 - **Payload 有 `,"ck":` 字串唔可以搵錯**：`{"v":1,"id":7,"t":"req","op":"say","p":{"m":",\"ck\":99"},"ck":114}`——收方搵**最後一個** `,"ck":` 必須讀到 `114` 兼驗證通過。（`say` 只係攞嚟測 parser。）
 
 最長嘅訊息：`hello ack` 喺 `ext` 23 字、`id` 127 時係 **96 bytes**（唔計 `\n` 就 95）；`emo_set` 最長 80 bytes。全部離 127 仲有位。
+
+9.6／9.7 嗰批最長係 `mcp_desc`／`mcp_done` 嘅 **91 bytes**（例子值），但 `mcp_desc` 係**唯一一個真係會迫近上限**嘅 op——`desc` 係學生自己打嘅字。所以佢個長度規則寫咗喺 9.7，唔可以靠估。
