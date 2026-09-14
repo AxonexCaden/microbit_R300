@@ -80,7 +80,7 @@ function sweepStep(want: string, run: () => string): void {
     basic.pause(kSweepGapMs)
 }
 
-function protocolSweep(): void {
+function protocolSweep(driveWheels: boolean): void {
     // Each MakeCode event handler runs in its own fibre, so a B TAP during the sweep would
     // otherwise start a second sweep alongside this one: the two loops would share sweepFails
     // and the second would reset the first's counters mid-run. A tap is meant to move a hand;
@@ -93,7 +93,12 @@ function protocolSweep(): void {
 
     // 1-6: the three ops a student uses, plus emo_set, each one ACCEPTED.
     sweepStep("ok", () => r300.arm(90, 90))               // 1 both hands down
-    sweepStep("ok", () => r300.motor(0, 30, 800))         // 2 forward 0.8s at 30% ⚠️ it moves
+    // 2 is the ONLY step that puts power to the wheels. Auto mode sends a stop here instead:
+    // R300 reboots on every monitor attach and re-handshakes on any live loss, and each of those
+    // opens a new session that re-arms this sweep — so the automatic case must not move the
+    // robot. The op, its ack and the motor-board UART are all still exercised; only the
+    // direction is not, and the real forward move is covered by the held-B sweep.
+    sweepStep("ok", () => driveWheels ? r300.motor(0, 30, 800) : r300.motor(0, 0, 0))  // 2
     sweepStep("ok", () => r300.motor(0, 0, 0))            // 3 stop
     sweepStep("ok", () => r300.volume(50))                // 4 also runs R300's vol_done round trip
     sweepStep("ok", () => r300.emoji(r300.Emoji.Happy))   // 5 face on the monitor
@@ -147,25 +152,41 @@ function protocolSweep(): void {
 // doubles as the quickest way to tell WHICH firmware is flashed: a sweep that starts by
 // itself can only have come from this file.
 //
-// ⚠️ Step 2 puts power to the wheels, and R300 resets every time a monitor is attached —
-// so this fires a few seconds after every attach, unprompted. Put the robot where it can
-// drive freely, or set kAutoSweep to false and hold B instead.
+// ⚠️ R300 resets every time a monitor is attached, and re-handshakes whenever its live check
+// loses the micro:bit — and each of those opens a new session, so this fires again unprompted.
+// It therefore runs with `driveWheels = false`, which sends a stop in place of the one
+// wheel-driving step. Hold B for the full version when you actually want to see it move.
 // ---------------------------------------------------------------------------
 const kAutoSweep = true
 const kLiveToSweepMs = 1000
 const kCountdownMs = 3000
 
+// One sweep per SESSION, not one per power-on. R300 restarts on every monitor attach, and a
+// micro:bit that swept only once would sit through every one of them doing nothing — which is
+// exactly how a real regression goes unnoticed. sessionEpoch ticks whenever R300 opens a new
+// handshake, so this loops and sweeps again each time the other end comes back, including when
+// R300 reboots while this micro:bit keeps running.
 if (kAutoSweep) {
+    let sweptEpoch = -1
     control.inBackground(function () {
-        while (r300.liveCount == 0) basic.pause(50)
-        basic.pause(kLiveToSweepMs)
-        // Not a nicety: the next thing that happens energises the wheels, and whoever just
-        // attached the cable may still be holding the robot.
-        for (let n = 3; n > 0; n--) {
-            basic.showNumber(n)
-            basic.pause(kCountdownMs / 3)
+        while (true) {
+            // liveCount is per-session, so this asks "is the link up in THIS session" — a
+            // condition that has to be re-established after a restart, never remembered.
+            while (r300.liveCount == 0 || r300.sessionEpoch == sweptEpoch) basic.pause(50)
+            sweptEpoch = r300.sessionEpoch
+            basic.pause(kLiveToSweepMs)
+            // Shown so "which session is this" is answerable without a cable: the matrix is the
+            // only evidence this firmware has that the sweep re-armed rather than merely ran.
+            basic.showNumber(r300.sessionEpoch)
+            basic.pause(500)
+            // Not a nicety: the countdown below is the only warning before the sweep runs, and one
+            // of its steps energises a motor.
+            for (let n = 3; n > 0; n--) {
+                basic.showNumber(n)
+                basic.pause(kCountdownMs / 3)
+            }
+            protocolSweep(false)   // auto: never drives the wheels
         }
-        protocolSweep()
     })
 }
 
@@ -183,7 +204,7 @@ input.onButtonPressed(Button.B, function () {
     const pressedAt = control.millis()
     while (input.buttonIsPressed(Button.B)) basic.pause(20)
     if (control.millis() - pressedAt >= kSweepHoldMs) {
-        protocolSweep()
+        protocolSweep(true)   // held B: the full sweep, wheels included
         return
     }
     basic.showString(r300.arm(90, -1))   // whichever hand drops is a1

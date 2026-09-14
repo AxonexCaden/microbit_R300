@@ -132,7 +132,10 @@
 - **點解要去重**：`ack` 途中爛咗，發送方會用同一個 `id` 重送。收方如果再執行，`leg_set {"fwd":100,"ms":1000}` 就會令部車行 **2 秒**而唔係 1 秒。
 - **點解要比埋 `op`**：`id` 會重用（繞完 128 個返 0）。
 - **Session 由 R300 收到 `hello` 嘅 ack 劃分**：R300 一收到就**清空自己嘅去重記錄**。micro:bit 唔去重（佢唔 cache 回覆），所以佢冇嘢要清。
-  ⚠️ **已知缺口**：micro:bit **自己** reset 冇人會清 R300 個記錄 —— 佢 reset 後由 `id` 0 重新數，如果第一句撞正上一輪最後執行過嗰句（例如 `emo_set id 1`），R300 會當係重送、**唔執行但回 ok**。補法係「`live` 連續失敗報 `LOST` → 重新入 handshake 階段」，未做。
+- ✅ **反方向（micro:bit 自己 reset）已經補好**：micro:bit 每次開機隨機抽一個 `sid`（1..65535），**每個 `live` ack 都帶住佢**（第 9.1 節）。R300 見到 `sid` 同上次唔同 = 對面換咗一個 session → 即刻行返 handshake 階段，連帶清去重記錄。**呢個係 `sid` 唯一嘅用途**，唔係身分認證。
+  - 冇 `sid` 嘅 live ack（舊 firmware）→ R300 當「未知」，**唔會**觸發 —— 所以兩邊可以唔同步升級。
+  - 兩次開機抽到同一個 `sid` 嘅機率係 1/65535，後果係該次 reset 冇被偵測到（要等真斷線先 re-handshake），唔係錯誤行為。
+- ⚠️ **`live` 呢個 op 本身唔 cache**（第 7.2 節最後一條），所以佢答乜嘢唔受去重影響。
 - **只有真正執行過嘅回覆先寫入去重記錄。** `badck`／`badver`／`noop`／`badarg` 呢啲喺執行之前就擋咗嘅錯誤**唔可以**記——否則同一個 `id` 嘅正確重送會永遠只收到重播嘅錯誤。
 - **冪等嘅 op（`live`）可以唔 cache**，直接再答一次，出嚟嘅 ack 一模一樣。
 
@@ -174,12 +177,17 @@ R300 用嚟知道 micro:bit 仲連唔連住。
 | 幾時開始 | **`hello` handshake 成功之後先開始**（見 9.2）。未 handshake 之前 R300 一條 `live` 都唔會發 |
 | 週期 | **500ms** |
 | 等 ack | **300ms**（一定要細過週期） |
-| 判斷斷線 | **連續 3 次**冇 ack → `LOST`；**一次成功即清零** |
+| 判斷斷線 | **連續 2 次**冇 ack → `LOST`；**一次成功即清零**。⚠️ 門檻低 = 恢復快但容易誤報；連線抖動亦算在內，因為重新握手會清去重記錄，狀態重新對齊本身有價值 |
 | Idle-skip | 過去 500ms 內收過任何**通過 `ck`+`v`、而且唔係 `live`** 嘅訊息 → 今個週期唔發，當成功 |
-| 斷線後果 | **只出 log warning**，唔停任何嘢 |
-| 統計 | 每 30 秒一行 `stats:`（ok／miss／skip／late／stale／lost／max_recovered_streak／rtt_max） |
+| 斷線後果 | **重新入 handshake 階段**（第 9.2 節）＋ log warning。唔停其他嘢 |
+| 對面 reset | **`sid` 一變**就當同一次 reset 處理（見下），唔使等斷線 |
+| 統計 | 每 30 秒一行 `stats:`，**再加每個 session 結束（`LOST`／偵測到 `sid` 變）都印一次**（ok／miss／skip／late／stale／lost／restart／max_recovered_streak／rtt_max）。⚠️ 一個 session 通常短過 30 秒，所以唔加後面嗰個嘅話一行都出唔到 |
 
 - ⚠️ **`live` 唔用第 8 節嘅重試**，用連續失敗計數。
+- 🔴 **`sid` 係 ack 上面「載住對方自己知、R300 估唔到」嘅第二個值**（第一個係 `hello` 嘅 `ext`）。佢補嘅係**反方向缺口**：R300 唔會再問 `hello`，所以 micro:bit 自己 reset 佢係察覺唔到嘅 —— 而 reset 之後 micro:bit 由 `id` 0 重新數，第一句隨時撞正 R300 去重記錄入面嗰句，變成**唔執行、但回 `ok`**（第 7.2 節）。`sid` 一變就即刻 re-handshake，順手清埋個記錄。
+- ⚠️ **`sid` 只會喺 `st:"ok"` 嘅 ack 出現。** `badck` 同 `badver` 係 envelope 層擋落嚟嘅，根本未入到 op dispatch，所以永遠唔帶 `sid` —— R300 兩者都當「冇 `sid`」處理。
+- ⚠️ **R300 每次開始新 session（即每次 handshake 成功）都會清走個 `sid` 基準。** 所以一個「慢到先報 `LOST` 再 handshake」嘅 reset 唔會白行多一轉 handshake —— 新 session 嘅第一條 ack 一律當「未知」。快嗰條路（冇 `LOST`）照樣捉得到。
+- ⚠️ **`sid` 唔可以當身分認證**：佢係明文、順序可預測（`live` 週期），同上一個完全一樣都唔會有人理。佢淨係用嚟判「換咗 session 未」。
 - ⚠️ **`live` 自己嘅 ack 唔計入 idle-skip**，否則 `live` 會 skip 自己，實際變 1Hz。
 - 只有 ② 影響 R300 嘅判斷；③ 係俾 micro:bit 知道自己把聲去到 R300。
 - ⚠️ 呢個係**主動 probe**，即係之前因為串擾（假 `LOST`）而拆走嘅嗰類機制 —— `stats:` 就係用嚟量度真實失敗率、再決定門檻嘅依據。
@@ -200,7 +208,9 @@ R300 主動：開機之後每 500ms 發一次，直到 micro:bit 答。Session �
 - `ext` 建議保持 **23 字之內**（同 `fw` 對稱）—— ⚠️ R300 **唔會**截短或者拒收，純粹係留位：23 字嘅 `ext` 令呢句去到 96 bytes，遠低於 127。
 - R300 收到 ack 之後：**清空自己嘅去重記錄** → 發 `fin` → 開始 `live`。
 - ⚠️ **R300 每一次開機都會重新問一次**，唔理 micro:bit 覚唔覚得自己 handshake 過。所以 R300 reboot 唔需要 micro:bit 做任何嘢 —— 舊設計嗰兩個機制（`live` 帶 `p.hs:0`、未 handshake 回 `nohs`）**已經取消**。
-- ⚠️ **反方向冇解**：micro:bit 自己 reset／換咗另一隻，R300 唔會發覺（因為佢唔會再問）。已知缺口，見 7.2。
+- ✅ **反方向有解**：micro:bit 自己 reset／換咗另一隻 → 佢個新 `sid` 令 R300 喺下一個 `live` ack 發覺，自動重新 handshake（第 9.1／7.2 節）。R300 仍然唔會主動再問 `hello`，但唔再需要問。
+- ⚠️ **micro:bit 要靠「係唔係自己 handshake 嘅第一條 `hello`」嚟分 session**：R300 一收到 ack 就會離開 handshake phase，所以**已經 ack 過一次之後再收到 `hello`，就必定係一個新 session**（R300 reboot，或者佢 `live` 判斷斷線交返手）。唔可以靠「有冇 `live` 過」—— R300 開咗 session 但未及發第一條 `live` 就 reboot 嘅話，嗰個 session 就會漏掉。micro:bit 所有按 session latch 嘅嘢（`r300.liveCount`、自動掃描）都 key 喺呢度（`protocol.ts` 嘅 `sessionEpoch`）。
+  - **重發唔會誤判**：R300 只會喺收到 ack 之前重發，所以嗰陣一條 `live` 都未服務過，reset 本身就係 no-op。
 - 最長嘅 ack（`ext` 23 字、`id` 127）係 **96 bytes**（包 `\n`）。
 - 發送規則見第 8 節（R300 每 500ms 重試、冇上限；`hello` 嘅 ack 超時係 300ms）。
 
@@ -324,7 +334,8 @@ R300 -> mb : {"v":1,"id":202,"t":"req","op":"mcp_done","p":{"name":"wave","steps
 ## 10. R300 開機
 
 - RX task 起嗰陣先 `uart_flush_input()`，清走 R300 未 ready 之前囤住嘅過時訊息。Phase 2 之後尤其重要：一句 10 秒前嘅郁指令喺 R300 開完機先執行，部機會突然自己郁。（v0 時期實測：R300 一 ready 就有 11–12 條喺 100ms 內湧入。）
-- 開機時 R300 **未 handshake**：佢淨係發 `hello`，所以線上根本唔會有其他 `req`。micro:bit 收到 `hello` 就答 —— 佢唔使「察覺」R300 reboot 過咗。
+- 開機時 R300 **未 handshake**：佢淨係發 `hello`，所以線上根本唔會有其他 `req`。micro:bit 收到 `hello` 就答。
+- ⚠️ **micro:bit 唔可以當「收到 `hello`」就等於「R300 剛開機」**：R300 每次開機都會重問，而且佢會每 500ms 重發直到收 ack —— 兩者一樣樣。判別靠「**係唔係自己已經 ack 過一次之後嘅第一條 `hello`**」（第 9.2 節）。分得到嘅話，micro:bit 就可以每個 session 都由頭做一次自己嘅嘢（例：`test.ts` 每個 session 自動跑一次掃描，唔係每次上電跑一次）。
 
 ## 11. Test vectors
 
@@ -336,7 +347,7 @@ R300 -> mb : {"v":1,"id":202,"t":"req","op":"mcp_done","p":{"name":"wave","steps
 | hello ack（mb 答） | 98 | 78 | `{"v":1,"id":128,"t":"ack","op":"hello","p":{"st":"ok","ext":"0.1.0"},"ck":98}` |
 | hello fin（R300 發） | 251 | 64 | `{"v":1,"id":128,"t":"fin","op":"hello","p":{"rtt":11},"ck":251}` |
 | live req（handshake 成功之後） | 104 | 55 | `{"v":1,"id":128,"t":"req","op":"live","p":{},"ck":104}` |
-| live ack | 210 | 64 | `{"v":1,"id":128,"t":"ack","op":"live","p":{"st":"ok"},"ck":210}` |
+| live ack | 187 | 76 | `{"v":1,"id":128,"t":"ack","op":"live","p":{"st":"ok","sid":12345},"ck":187}` |
 | live fin | 109 | 62 | `{"v":1,"id":128,"t":"fin","op":"live","p":{"rtt":8},"ck":109}` |
 | live badck ack | 137 | 77 | `{"v":1,"id":128,"t":"ack","op":"live","p":{"st":"err","e":"badck"},"ck":137}` |
 | live badver ack | 8 | 76 | `{"v":1,"id":128,"t":"ack","op":"live","p":{"st":"err","e":"badver"},"ck":8}` |

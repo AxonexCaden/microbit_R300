@@ -14,14 +14,33 @@ namespace r300 {
     // R300's own firmware version, from the `fw` field of its `hello`.
     export let peerFw = ""
 
-    // How many `live` requests R300 has sent and we have answered. Non-zero is the only
-    // proof on this side that the link is really UP: R300 does not start its live check
-    // until it has seen our hello ack (protocol.md 8), so seeing `hello` only means the
-    // handshake has STARTED, while answering a live cycle means it COMPLETED.
-    // It is also the signal that survives a micro:bit reset. A micro:bit flashed while
-    // R300 keeps running never sees another hello — R300 is long past that phase — so
-    // waiting on peerFw there would wait forever.
+    // Identifies THIS run of the program, and changes on every reset. R300 compares it against
+    // the previous live ack's, because nothing else about a micro:bit restart is visible from
+    // there: the link stays up all the way through, so a fast reset would otherwise leave
+    // R300's dedupe record holding the OLD session's last request — and the new session's
+    // first request, which starts again at id 0, could be answered from that cached ack
+    // instead of running. Random rather than a counter because there is nowhere persistent to
+    // keep one, and it only has to differ from the previous boot.
+    export const SESSION_ID = Math.randomRange(1, 65535)
+
+    // Which session the two boards are in. R300's two phases are mutually exclusive — it sends
+    // `hello` until the handshake lands, then only `live` — so a hello arriving after we have
+    // already served live traffic can only be a NEW session (R300 restarted, or its live check
+    // gave up and handed back). A hello with no live in between is just the 500ms retry, and
+    // must NOT count, or a dropped ack would look like a restart.
+    // Everything the micro:bit latches for one session keys on this.
+    export let sessionEpoch = 0
+
+    // Live cycles answered in the CURRENT session, reset whenever a new one starts. > 0
+    // therefore means "the link is up in this session", which is the question a consumer
+    // actually asks — a running total cannot answer it once a restart has happened.
     export let liveCount = 0
+
+    // R300 leaves the handshake the moment it gets an ack, so it sends another `hello` only when
+    // it opens a NEW session — reboot, or it gave up on the live check. Seeing one after we have
+    // already acked therefore means the session changed, and it is the only way this side can see
+    // an R300 restart: a session that never reached a live cycle has nothing else to go on.
+    let ackedHello = false
 
     // The last recording R300 reported committing, from its `mcp_done` (protocol.md 9.7):
     // the tool's name, how many moves it captured, and how many it THREW AWAY because the
@@ -135,7 +154,9 @@ namespace r300 {
         }
         if (op == "live") {
             liveCount++
-            return buildLine("ack", id, op, "{\"st\":\"ok\"}")
+            // `sid` is what lets R300 notice that this micro:bit is a different run than the
+            // one it was talking to. See SESSION_ID.
+            return buildLine("ack", id, op, "{\"st\":\"ok\",\"sid\":" + SESSION_ID + "}")
         }
         // R300 raises this itself once the volume has actually landed (protocol.md 9.6).
         // Nothing to do but confirm it: answering "noop" would make R300 log the whole
@@ -146,6 +167,11 @@ namespace r300 {
             return buildLine("ack", id, op, "{\"st\":\"ok\"}")
         }
         if (op == "hello") {
+            // See ackedHello. A retransmission cannot reach this branch: R300 retries only until
+            // it gets an ack, so nothing has served live at that point and the reset is a no-op.
+            if (ackedHello) sessionEpoch++
+            ackedHello = true
+            liveCount = 0
             const p = msg["p"]
             if (p !== undefined && p !== null && typeof p["fw"] == "string") peerFw = p["fw"]
             return buildLine("ack", id, op, "{\"st\":\"ok\",\"ext\":\"" + EXT_VERSION + "\"}")

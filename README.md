@@ -153,7 +153,7 @@ serial.setRxBufferSize(128)
 serial.setTxBufferSize(128)
 ```
 
-**點解**：MakeCode 個 serial RX/TX buffer **預設各得 20 bytes**，但呢條線上面最短嘅協議行已經超過 50 bytes——最短嘅 ack `{"v":1,"id":128,"t":"ack","op":"live","p":{"st":"ok"},"ck":210}` 就係 **63 bytes**，最長嗰條（`hello` ack 帶 23 字 `ext`、`id` 127）去度 **96 bytes**。20 bytes 裝唔落，個 ring buffer 喺 `\n` 到達之前就已經捲咗一轉——`serial.readLine()` 攞返嚟嘅係截斷咗嘅尾段，連 `"t"` 呢個 key 本身都已經俾沖走，所以 `handleLine()` 永遠收唔到一條完整嘅行。
+**點解**：MakeCode 個 serial RX/TX buffer **預設各得 20 bytes**，但呢條線上面最短嘅協議行已經超過 50 bytes——最短嘅 ack `{"v":1,"id":128,"t":"ack","op":"live","p":{"st":"ok","sid":12345},"ck":187}` 就係 **75 bytes**（`\n` 唔計），最長嗰條（`hello` ack 帶 23 字 `ext`、`id` 127）去度 **96 bytes**。20 bytes 裝唔落，個 ring buffer 喺 `\n` 到達之前就已經捲咗一轉——`serial.readLine()` 攞返嚟嘅係截斷咗嘅尾段，連 `"t"` 呢個 key 本身都已經俾沖走，所以 `handleLine()` 永遠收唔到一條完整嘅行。
 
 ⚠️ **佢個失敗症狀係「完全冧聲」**——唔係亂碼、唔係 checksum 唔啱、`onDataReceived` 睇落好似完全冇 fire 過。喺 R300 個 log 度睇落，同「實體回程線 `P1 ← GPIO10` 根本冇駁」**一模一樣，分唔到**。
 
@@ -187,7 +187,15 @@ serial.setTxBufferSize(128)
 
 | 變數 | 意思 |
 |---|---|
-| `r300.liveCount` | R300 答過幾多次 `live`。**> 0 = 握手真係完成、條 link 通咗。** R300 收到 `hello` 嘅 ack 之後先開始 `live`，所以見到 `hello` 只代表握手**開始**咗，見到 `live` 才代表**完成**。`test.ts` 嘅自動 sweep 就係等呢個數 |
+| `r300.liveCount` | **本 session** 內 R300 答過幾多次 `live`。**> 0 = 今個 session 握手真係完成、條 link 通咗。** R300 收到 `hello` 嘅 ack 之後先開始 `live`，所以見到 `hello` 只代表握手**開始**咗，見到 `live` 才代表**完成**。⚠️ 每次新 session 會**歸零**——R300 每次 reboot 都會重新握手，所以呢個數一定要「今次 session 由 0 爬返上 > 0」，唔可以當佢係一個由頭到尾都唔跌嘅累計數 |
+| `r300.sessionEpoch` | **R300 開過幾多次 handshake**（由 0 開始）。`test.ts` 嘅自動掃描就係 key 喺呢個數：**每個 session 掃一次**。⚠️ 佢係「handshake 次數」而唔係「session 次數」—— 如果 handshake 期內有 ack 掉咗而 R300 重發 `hello`，就會 +多過 1。對個閘冇影響（只係比 `!=`），但唔好當佢係準確嘅 session 計數 |
+| `r300.SESSION_ID` | 呢次開機隨機抽嘅 id（1..65535）。只會出現喺 `live` ack 嘅 `sid` 欄位，用途係等 R300 知道 micro:bit 自己 reset 咗（protocol.md 7.2）。學生寫嘢唔使理佢 |
+
+⚠️ **點解要分 session，唔係「上電做一次」就算**：R300 每次 reboot 都會重新握手（**包括每次開 monitor —— 一開 port 就 reset 佢**），而 micro:bit 係唔會跟住 reset 嘅。任何「只做一次」嘅嘢如果認「上電」，就會喺 R300 之後每一次 reboot 面前坐喺度唔做嘢——一個真嘅 regression 就係咁靜靜哋過咗。
+
+判別「邊個 `hello` 係新 session」唔可以靠「見到 `hello`」，因為 R300 每 500ms 就重發一次直到收 ack。`protocol.ts` 用嘅規則係：**R300 一收到 ack 就會離開 handshake 階段，所以「自己已經 ack 過一次之後再收到 `hello`」就必定係新 session**。靠「有冇 `live` 過」係唔夠嘅 —— R300 開咗 session 但未及發第一條 `live` 就 reboot 嘅話，嗰個 session 就會漏掉。
+
+⚠️ **自動掃描特登唔郁車輪**（`protocolSweep(false)`）：R300 每次 reboot／每次連線抖動都會開新 session，即係每次都會重新觸發掃描 —— 如果自動版會郁，部車就會喺冇人掂過嘅情況下自己行。第 2 步（唯一一步會畀電嘅）喺自動模式改送停車，`leg_set` 個 op、ack 同 motor board UART 照樣驗到。想睇真嘅向前行就**按住 B 一秒**跑完整版。
 
 **錄完之後嘅結果喺三個變數（R300 經 `mcp_done` 報返）：**
 
