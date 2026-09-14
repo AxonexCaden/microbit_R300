@@ -329,3 +329,145 @@ namespace r300 {
         return send("arm_set", p + "}")
     }
 }
+
+// ---------------------------------------------------------------------------
+// Student-facing blocks
+//
+// One namespace per subsystem, mirroring pxt-axonex_test's layout. Every function is a thin
+// wrapper over the r300 API above — r300 stays the internal API, and these namespaces are the
+// surface students are meant to use. They all return void, so each one drops into "on start"
+// as a plain statement block; the answer R300 sends back is discarded (that report belongs in
+// a status block, not in every action).
+//
+// ⚠️ The r300.* blocks above are still visible in the toolbox until they are hidden — a
+// separate change that touches r300's own annotations. Until then both sets exist.
+// ---------------------------------------------------------------------------
+
+//% color="#AA278D" icon="\uf013" block="R300 Core"
+namespace r300_core {
+    /**
+     * Connect to R300 over P0 (TX) / P1 (RX). Put it in "on start".
+     * Once connected the micro:bit answers R300's link check by itself.
+     */
+    //% blockId=r300_core_connect block="connect to R300"
+    //% weight=100
+    export function connect(): void {
+        r300.connect()
+    }
+}
+
+//% color="#E67E22" icon="\uf085" block="R300 Movement"
+//% groups="['Drive Control']"
+namespace r300_movement {
+    /**
+     * Drive the wheels. rot / fwd are -100..100 percent of full speed, ms is 0..3000 and
+     * says how long the motor board should run for. The wire record of what R300 did with
+     * it lives in R300's console, not here.
+     */
+    //% blockId=r300_movement_drive block="drive rot %rot fwd %fwd for %ms ms"
+    //% rot.min=-100 rot.max=100 rot.defl=0
+    //% fwd.min=-100 fwd.max=100 fwd.defl=50
+    //% ms.min=0 ms.max=3000 ms.defl=1000
+    //% weight=90
+    //% group="Drive Control"
+    export function drive(rot: number, fwd: number, ms: number): void {
+        r300.motor(rot, fwd, ms)
+    }
+
+    /**
+     * Stop the wheels NOW. Unlike drive(0, 0, 0), this also interrupts a move that is
+     * still in flight, so it works as an emergency stop even from another button handler.
+     */
+    //% blockId=r300_movement_stop block="stop driving now"
+    //% weight=89
+    //% group="Drive Control"
+    export function stop(): void {
+        r300.stopNow()
+    }
+}
+
+//% color="#E67E22" icon="\uf256" block="R300 Hands"
+//% groups="['Hand Control']"
+namespace r300_hands {
+    /**
+     * Move the hands. a1 / a2 are physical degrees 0..180 (0 = forward, 90 = down,
+     * 180 = back). Pass -1 for a hand to leave it alone.
+     */
+    //% blockId=r300_hands_move block="move hands to %a1 and %a2 degrees"
+    //% a1.min=-1 a1.max=180 a1.defl=90
+    //% a2.min=-1 a2.max=180 a2.defl=90
+    //% weight=90
+    //% group="Hand Control"
+    export function moveHands(a1: number, a2: number): void {
+        r300.arm(a1, a2)
+    }
+}
+
+//% color="#E67E22" icon="\uf118" block="R300 Emotion"
+//% groups="['Emotion Control']"
+namespace r300_emotion {
+    /**
+     * Show a face on R300's monitor (the eyes). The face stays until something else
+     * changes it.
+     */
+    //% blockId=r300_emotion_show block="show face %e"
+    //% weight=90
+    //% group="Emotion Control"
+    export function showFace(e: r300.Emoji): void {
+        r300.emoji(e)
+    }
+}
+
+//% color="#E67E22" icon="\uf028" block="R300 Speaker"
+//% groups="['Audio Actions']"
+namespace r300_speaker {
+    /**
+     * Set the speaker volume, 0..100.
+     */
+    //% blockId=r300_speaker_volume block="set speaker volume to %v"
+    //% v.min=0 v.max=100 v.defl=50
+    //% weight=90
+    //% group="Audio Actions"
+    export function setVolume(v: number): void {
+        r300.volume(v)
+    }
+}
+
+//% color="#8E44AD" icon="\uf0d0" block="R300 MCP"
+//% groups="['MCP Setup']"
+namespace r300_mcp {
+    /**
+     * Name the routine about to be recorded and say what it does. Call it BEFORE
+     * startRecording(). The name must be 1-16 characters of a-z, 0-9 or _ — it becomes
+     * part of the AI's tool name. Calling it again with the same name appends to the
+     * description.
+     */
+    //% blockId=r300_mcp_name block="name recording %name described as %desc"
+    //% weight=90
+    //% group="MCP Setup"
+    export function nameRecording(name: string, desc: string): void {
+        r300.describe(name, desc)
+    }
+
+    /**
+     * Start recording: every move R300 accepts from here on is captured, and the moves
+     * still happen live while you perform them.
+     */
+    //% blockId=r300_mcp_start block="start recording moves"
+    //% weight=89
+    //% group="MCP Setup"
+    export function startRecording(): void {
+        r300.takeStart()
+    }
+
+    /**
+     * Stop recording and publish it as a tool the voice AI can call by name.
+     */
+    //% blockId=r300_mcp_finish block="finish recording as an AI tool"
+    //% weight=88
+    //% group="MCP Setup"
+    export function finishRecording(): void {
+        r300.takeFinish()
+    }
+}
+
