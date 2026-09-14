@@ -80,6 +80,8 @@ namespace r300 {
      * dedupe stops it MOVING twice, so the damage is a wrong answer on the LED, not a wrong
      * move — which is worse to debug, because it looks exactly like a broken link.
      */
+    //% blockId=r300_send block="send %op with payload %pJson"
+    //% weight=60
     export function send(op: string, pJson: string): string {
         if (busy) return "busy"
         busy = true
@@ -124,6 +126,11 @@ namespace r300 {
      * says how long the motor board should run for. A stop is rot=0 and fwd=0.
      * The return value says whether R300 *accepted* the request — not that the robot moved.
      */
+    //% blockId=r300_motor block="drive rot %rot fwd %fwd for %ms ms"
+    //% rot.min=-100 rot.max=100 rot.defl=0
+    //% fwd.min=-100 fwd.max=100 fwd.defl=50
+    //% ms.min=0 ms.max=3000 ms.defl=1000
+    //% weight=95
     export function motor(rot: number, fwd: number, ms: number): string {
         return send("leg_set", "{\"rot\":" + rot + ",\"fwd\":" + fwd + ",\"ms\":" + ms + "}")
     }
@@ -138,6 +145,8 @@ namespace r300 {
      * in-flight guard and comes back "busy" WITHOUT SENDING ANYTHING — and the wheels carry on
      * turning for whatever was left of that move. That is what this exists for.
      */
+    //% blockId=r300_stop block="stop driving now"
+    //% weight=94
     export function stopNow(): string {
         abandoned = true
         // The sender sees the flag on its next 1ms tick, so this normally costs about a
@@ -164,6 +173,8 @@ namespace r300 {
      * Calling it again with the SAME name APPENDS to the description, which is how a description
      * longer than one line gets sent: pass at most kMaxDescChars (34) characters at a time.
      */
+    //% blockId=r300_describe block="name recording %name described as %desc"
+    //% weight=89
     export function describe(name: string, desc: string): string {
         // Caught here rather than left to send(), because "long" is the one failure a student can
         // actually fix — by splitting the description across several describe() calls.
@@ -175,6 +186,8 @@ namespace r300 {
      * Start recording. Every move R300 ACCEPTS from here on is captured, so perform the routine
      * AFTER this returns. The moves still happen live while you record them, so you are watching
      * the routine being built.
+    //% blockId=r300_take_start block="start recording moves"
+    //% weight=88
      * The name must already have been sent with describe(). Returns "ok" once R300 is armed.
      */
     export function takeStart(): string {
@@ -185,6 +198,8 @@ namespace r300 {
      * Stop recording and publish it as a tool. R300 answers "ok" for the take itself, and then
      * reports the finished tool separately through lastTakeName / lastTakeSteps / lastTakeDrop.
      *
+    //% blockId=r300_take_finish block="finish recording as an AI tool"
+    //% weight=87
      * 🔴 Read lastTakeDrop. R300 keeps at most 64 moves; anything past that still runs but is not
      * recorded, and drop > 0 is the only sign on this side that the routine is incomplete.
      * A take with no moves in it is refused with "badarg", as is finishing without starting.
@@ -291,6 +306,9 @@ namespace r300 {
      * r300.lastVolume — "accepted" and "applied" are different claims and this link
      * reports them separately.
      */
+    //% blockId=r300_volume block="set volume %v"
+    //% v.min=0 v.max=100 v.defl=50
+    //% weight=92
     export function volume(v: number): string {
         return send("vol_set", "{\"vol\":" + v + "}")
     }
@@ -298,6 +316,10 @@ namespace r300 {
     /**
      * Move the hands. a1 = right hand, a2 = left hand, physical degrees 0..180
      * (0 = forward, 90 = down, 180 = back). Pass -1 for a hand to leave it alone: the key is
+    //% blockId=r300_arm block="move hands to %a1 and %a2 degrees"
+    //% a1.min=-1 a1.max=180 a1.defl=90
+    //% a2.min=-1 a2.max=180 a2.defl=90
+    //% weight=93
      * then left out of the request, because 0 is a real angle and cannot mean "don't move".
      */
     export function arm(a1: number, a2: number): string {
