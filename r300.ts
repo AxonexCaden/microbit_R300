@@ -351,6 +351,9 @@ namespace r300 {
 //
 // The r300.* blocks above are hidden from the toolbox (blockHidden in their annotations),
 // so this is everything a student sees; r300 itself stays callable from TypeScript.
+//
+// Every numeric input is rounded and clamped before the request is built — the block fields
+// already clamp typed values in the IDE, but a value computed in JavaScript never met one.
 // ---------------------------------------------------------------------------
 
 //% color="#AA278D" icon="\uf013" block="R300 Core"
@@ -363,6 +366,14 @@ namespace r300_core {
     //% weight=100
     export function connect(): void {
         r300.connect()
+    }
+
+    // Clamp a number into an inclusive range. Not a block — it exists for the wrappers below,
+    // whose arguments can come from JavaScript or from arithmetic and therefore never met a
+    // block field's min/max. R300 refuses out-of-range values (badarg), and a void block cannot
+    // show that, so the range has to hold before the request is built.
+    export function clamp(v: number, min: number, max: number): number {
+        return Math.max(min, Math.min(max, v))
     }
 }
 
@@ -384,6 +395,11 @@ namespace r300_movement {
     //% weight=90
     //% group="Drive Control"
     export function drive(rot: number, fwd: number, ms: number): void {
+        // Round first, then clamp: the clamp must be the LAST step, or rounding a boundary
+        // value could push it back out of range. Keep these bounds in step with the //% values.
+        rot = r300_core.clamp(Math.round(rot), -100, 100)
+        fwd = r300_core.clamp(Math.round(fwd), -100, 100)
+        ms = r300_core.clamp(Math.round(ms), 0, 3000)
         r300.motor(rot, fwd, ms)
         // The command is only the START of the move: R300 hands `ms` to the motor board and
         // answers straight away, so hold the student's code still until the move is over.
@@ -415,6 +431,9 @@ namespace r300_hands {
     //% weight=90
     //% group="Hand Control"
     export function moveHands(a1: number, a2: number): void {
+        // -1 (leave the hand alone) is the floor, so clamping can never turn "skip" into a move.
+        a1 = r300_core.clamp(Math.round(a1), -1, 180)
+        a2 = r300_core.clamp(Math.round(a2), -1, 180)
         r300.arm(a1, a2)
     }
 }
@@ -445,6 +464,7 @@ namespace r300_speaker {
     //% weight=90
     //% group="Audio Actions"
     export function setVolume(v: number): void {
+        v = r300_core.clamp(Math.round(v), 0, 100)
         r300.volume(v)
     }
 }
