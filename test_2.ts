@@ -18,11 +18,11 @@ input.onButtonPressed(Button.B, function () {
  *
  * added and switch to the Blocks view: one "on start" stack, one R300 block per call.
  *
- * It waits a second after connect, then runs the list in order; A+B stops the wheels.
+ * The extension connects itself at power-up, so there is no connect call: the stack
+ * starts with a one-second settle, then runs the list in order; A+B stops the wheels.
  *
  * Not part of the extension: test_2.ts is not in pxt.json, so it never reaches students.
  */
-r300_core.connect()
 led.toggle(0, 0)
 basic.pause(1000)
 // 1 — wheels: forward.

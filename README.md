@@ -161,14 +161,14 @@ serial.setTxBufferSize(128)
 
 ## `r300.ts` 提供咩 Block？
 
-**Blocks 畫面有兩個：**
+**學生喺 Blocks 畫面見到嘅係各 namespace**（`R300 Movement`／`R300 Hands`／`R300 Emotion`／`R300 Speaker`／`R300 MCP`）；下面呢節係內部 `r300.*` API —— 而家全部 `blockHidden`，淨係 TypeScript call 得到。
 
 | Block | TypeScript | 用途 |
 |---|---|---|
-| `connect to R300` | `r300.connect(): void` | 開機（`on start`）做一次：redirect serial 去 P0/P1、加大 buffer、註冊 RX handler |
-| `show face [happy]` | `r300.emoji(e): string` | 喺 monitor 眼睛板顯示一個表情。19 個名（happy / sad / angry / …），只可以喺下拉揀 |
+| ~~`connect to R300`~~ | `r300.connect(): void` | **唔再係 block**：extension 開機自動 connect（`r300.ts` 最底嘅 top-level `r300.connect()`，行喺任何 `on start` 之前）。有 guard，重複 call = no-op。Redirect serial 去 P0/P1、加大 buffer、註冊 RX handler 都喺入面 |
+| `show face [happy]` | `r300.emoji(e): string` | 喺 monitor 眼睛板顯示一個表情。19 個名（happy / sad / angry / …），只可以喺下拉揀。學生版本係 `r300_emotion.showFace` |
 
-⚠️ `connect()` 特登回 `void`：有回傳值嘅 function 喺 Blocks 畫面會變成橢圓形 reporter block，只可以插入其他 block 個窿，**拖唔入 `on start`**。
+⚠️ 學生 block（`r300_movement.drive` 等）特登回 `void`：有回傳值嘅 function 喺 Blocks 畫面會變成橢圓形 reporter block，只可以插入其他 block 個窿，**拖唔入 `on start`**。內部 `r300.*` 特登有回傳值（`"ok"`／`"timeout"`…），所以更加唔會出 block。
 
 **其餘 8 個係 TypeScript function —— 特登未有 `//%`，所以 Blocks 畫面唔會見到。** 佢哋係完整嘅 API（唔係「寫嚟試用」），但要用就要喺 MakeCode 切去 JavaScript 打：
 
@@ -240,7 +240,7 @@ microbit_R300/                    ← repo root 本身就係 MakeCode extension
 ├── pxt.json                      ← extension manifest（dependencies: core / radio / microphone）
 ├── protocol.md                   ← 📖 v1 wire format 合約（**唯一真相來源**）
 ├── protocol.ts                   ← 協議層：ck 驗證、envelope 分派、砌回覆
-├── r300.ts                       ← ⭐ library：`r300` namespace + 兩個 block（`connect`、`show face`）
+├── r300.ts                       ← ⭐ library：內部 `r300` namespace（hidden）+ 學生 block namespaces；開機自動 connect
 ├── test.ts                       ← 本機測試（`testFiles`，唔會跟去學生 project）
 ├── tsconfig.json                 ← pxt build 用（pxt 自動生成）
 ├── package.json                  ← 釘住 pxt-microbit target 版本（+ package-lock.json）
@@ -257,7 +257,7 @@ microbit_R300/                    ← repo root 本身就係 MakeCode extension
 
 ## Version Control
 
-Repo：**https://github.com/AxonexCaden/microbit_R300**
+Repo：**https://github.com/kenny-wong-axonex/microbit_R300**（公開版；舊 `AxonexCaden` 係原本 repo）
 
 Clone 落嚟只有 ~9 個檔案、~400 KB，因為所有生成物都已經 gitignore：
 

@@ -338,6 +338,15 @@ namespace r300 {
         if (a2 >= 0) p += (a1 >= 0 ? "," : "") + "\"a2\":" + a2
         return send("arm_set", p + "}")
     }
+
+    // Clamp a number into an inclusive range. Deliberately NOT a block: it exists for the
+    // student-facing wrappers below, whose arguments can come from JavaScript or from
+    // arithmetic and therefore never met a block field's min/max. R300 refuses out-of-range
+    // values (badarg), and a void block cannot show that, so the range has to hold before the
+    // request is built.
+    export function clamp(v: number, min: number, max: number): number {
+        return Math.max(min, Math.min(max, v))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -349,33 +358,16 @@ namespace r300 {
 // as a plain statement block; the answer R300 sends back is discarded (that report belongs in
 // a status block, not in every action).
 //
+// The link opens itself at power-up: r300.connect() runs as a top-level statement at the end
+// of this file, BEFORE any "on start" code, so there is no connect block to forget. That call
+// is guarded, so calling it again (benches, or from TypeScript) is a no-op.
+//
 // The r300.* blocks above are hidden from the toolbox (blockHidden in their annotations),
 // so this is everything a student sees; r300 itself stays callable from TypeScript.
 //
 // Every numeric input is rounded and clamped before the request is built — the block fields
 // already clamp typed values in the IDE, but a value computed in JavaScript never met one.
 // ---------------------------------------------------------------------------
-
-//% color="#AA278D" icon="\uf013" block="R300 Core"
-namespace r300_core {
-    /**
-     * Connect to R300 over P0 (TX) / P1 (RX). Put it in "on start".
-     * Once connected the micro:bit answers R300's link check by itself.
-     */
-    //% blockId=r300_core_connect block="connect to R300"
-    //% weight=100
-    export function connect(): void {
-        r300.connect()
-    }
-
-    // Clamp a number into an inclusive range. Not a block — it exists for the wrappers below,
-    // whose arguments can come from JavaScript or from arithmetic and therefore never met a
-    // block field's min/max. R300 refuses out-of-range values (badarg), and a void block cannot
-    // show that, so the range has to hold before the request is built.
-    export function clamp(v: number, min: number, max: number): number {
-        return Math.max(min, Math.min(max, v))
-    }
-}
 
 //% color="#E67E22" icon="\uf085" block="R300 Movement"
 //% groups="['Drive Control']"
@@ -397,9 +389,9 @@ namespace r300_movement {
     export function drive(rot: number, fwd: number, ms: number): void {
         // Round first, then clamp: the clamp must be the LAST step, or rounding a boundary
         // value could push it back out of range. Keep these bounds in step with the //% values.
-        rot = r300_core.clamp(Math.round(rot), -100, 100)
-        fwd = r300_core.clamp(Math.round(fwd), -100, 100)
-        ms = r300_core.clamp(Math.round(ms), 0, 3000)
+        rot = r300.clamp(Math.round(rot), -100, 100)
+        fwd = r300.clamp(Math.round(fwd), -100, 100)
+        ms = r300.clamp(Math.round(ms), 0, 3000)
         r300.motor(rot, fwd, ms)
         // The command is only the START of the move: R300 hands `ms` to the motor board and
         // answers straight away, so hold the student's code still until the move is over.
@@ -432,8 +424,8 @@ namespace r300_hands {
     //% group="Hand Control"
     export function moveHands(a1: number, a2: number): void {
         // -1 (leave the hand alone) is the floor, so clamping can never turn "skip" into a move.
-        a1 = r300_core.clamp(Math.round(a1), -1, 180)
-        a2 = r300_core.clamp(Math.round(a2), -1, 180)
+        a1 = r300.clamp(Math.round(a1), -1, 180)
+        a2 = r300.clamp(Math.round(a2), -1, 180)
         r300.arm(a1, a2)
     }
 }
@@ -464,7 +456,7 @@ namespace r300_speaker {
     //% weight=90
     //% group="Audio Actions"
     export function setVolume(v: number): void {
-        v = r300_core.clamp(Math.round(v), 0, 100)
+        v = r300.clamp(Math.round(v), 0, 100)
         r300.volume(v)
     }
 }
@@ -528,4 +520,13 @@ namespace r300_mcp {
         r300.takeFinish()
     }
 }
+
+// ---------------------------------------------------------------------------
+// Auto-connect at power-up
+//
+// A top-level statement, so it runs before any "on start" code and no student has to
+// remember a connect block. r300.connect() is guarded, so this call and any later one
+// (benches, or TypeScript that still calls connect) cost nothing.
+// ---------------------------------------------------------------------------
+r300.connect()
 
