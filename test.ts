@@ -137,7 +137,130 @@ function protocolSweep(driveWheels: boolean): void {
 }
 
 // ---------------------------------------------------------------------------
-// AUTO SWEEP: run the sweep by itself once the link is really up.
+// RECORD A ROUTINE AND PUBLISH IT AS AN MCP TOOL.
+//
+// This is the one action whose result is invisible until you TALK to the robot, so it runs
+// first in the automatic bring-up below; a logo long-press calls the same function.
+//
+// The moves are performed BY THIS PROGRAM, not by the operator, and that is what makes the
+// test decidable. It used to be ten seconds of waiting for someone to press A / B, and an
+// empty recording (0 steps) then looks identical whether the recorder is broken or nobody
+// moved anything in time. A scripted routine has the same step count every run, so
+// lastTakeSteps becomes a number to compare against rather than a shrug.
+const kRecordScripted = true      // false = the old 10s operator window
+const kRecordWindowMs = 10000
+const kHandsForward = 0           // protocol.md 9.5: 0 = forward, 90 = down, 180 = backward
+const kHandsDown = 90
+// 1-16 chars of a-z, 0-9, _ ONLY — it becomes part of the AI's tool name (self.microbit.<name>),
+// so no spaces and no capitals. The description is capped at 34 chars PER CALL; calling
+// describe() again with the SAME name appends instead of replacing.
+//
+// 🔴 The name is a TRIGGER, not a label, and it has to survive the other tools. self.arm.pose's
+// description lays explicit claim to "hello", "goodbye", "wave", "point" and "hands up" — so a
+// routine called "wave", describing itself as "waves hello", lost every one of those words to
+// that tool: it was never called ONCE, while the arm still moved, via self.arm.pose. "high_five"
+// appears in no other tool's description.
+const kToolName = "high_five"
+const kToolDesc = "high-fives the user on request"
+
+// True while a take is in flight. R300 accepts only ONE take at a time and a take runs for
+// seconds, so a logo press landing during the automatic bring-up would arm a second take on top
+// of the first — two recordings sharing one step buffer, which is not a state either side
+// defines. Refusing is the honest answer; the caller decides whether to show it.
+let recordBusy = false
+
+// Returns false without doing anything if a take is already running. See kToolName above for the
+// naming rules, and kAutoBringUp below for why this runs without anyone pressing a button.
+function recordHighFive(): boolean {
+    if (recordBusy) return false
+    recordBusy = true
+    // 1. Name it and say what it does. R300 needs a name staged before it will start a take.
+    basic.showString(r300.describe(kToolName, kToolDesc))
+    basic.pause(300)
+    // 2. Arm the recorder. Moves R300 accepts from here on are captured AND still happen live.
+    basic.showString(r300.takeStart())
+    // 3. Perform the routine.
+    if (kRecordScripted) {
+        performHighFive()
+    } else {
+        // The manual path, and the ONLY one that can record a leg-only routine — which is what
+        // the arm-tap scope check needs proving with, since a take that never touches a hand has
+        // to replay without moving one. A and B keep working here: every MakeCode event handler
+        // runs in its own fibre and this one is parked in basic.pause().
+        basic.pause(kRecordWindowMs)
+    }
+    // 4. Commit it. R300 registers a tool called self.microbit.wave that the voice AI can call.
+    const committed = r300.takeFinish()
+    basic.showString(committed)
+    // 5. What R300 actually committed: moves captured, then moves THROWN AWAY.
+    //    The second number is the number that matters — anything above 0 means the routine ran
+    //    past R300's 64-step ceiling and is incomplete, and nothing else on this side says so.
+    //
+    //    ⚠️ Shown ONLY when this take actually committed. lastTakeSteps is never reset (it starts
+    //    at -1 and is written once per mcp_done), so on a failed take the two numbers below would
+    //    be the PREVIOUS take's — and a stale 4 / 0 reads exactly like a fresh success, which is
+    //    the one way this test could report a pass while nothing was recorded at all.
+    if (committed == "ok") {
+        // mcp_done is raised by R300's own notifier as a SEPARATE request, so it lands after the
+        // ack above. No polling is involved — Post() wakes that thread — so this is margin, not
+        // a measured wait.
+        basic.pause(500)
+        basic.showNumber(r300.lastTakeSteps)
+        basic.pause(1000)
+        basic.showNumber(r300.lastTakeDrop)
+    } else {
+        basic.showIcon(IconNames.No)
+    }
+    recordBusy = false
+    return committed == "ok"
+}
+
+// false = every leg_set in this file is a STOP. R300 reboots every time a monitor attaches and
+// the bring-up below re-fires on each new session, so driving here would move the robot
+// unprompted, over and over. Flip to true only with the robot on the floor and someone watching.
+const kDriveWheels = false
+
+// Long enough to SEE each beat. This is pacing for the audience, NOT for the recorder: a step's
+// dwell is fixed when it is captured (250ms for an arm line, the move's own ms for a leg line),
+// so nothing here changes how fast the routine replays.
+const kBeatMs = 700
+
+// The demo sequence: one of each op R300 accepts, in the order it is worth watching.
+//
+// 🔴 Only the ARM and LEG lines are recorded. emo_set and vol_set have no tap — there is no
+// ActionSink on MicrobitEmojiCommands or MicrobitSpeakerCommands, and Step carries one motor-bus
+// line with no bus field — so a take containing them replays WITHOUT them. They are in the
+// sequence anyway because the demo wants all four visible, and because they are the only exercise
+// two otherwise-untouched op paths ever get. Expect the take to report 5 steps, not 7.
+//
+// Shared by the recording and by every later session on purpose. Two copies of this sequence
+// would drift apart, and the copy that drifts unnoticed is the one that actually runs.
+function performHighFive(): void {
+    r300.arm(kHandsForward, kHandsForward)   // arms up — the offer  (recorded)
+    basic.pause(kBeatMs)
+    r300.arm(kHandsDown, kHandsDown)         // arms down — the five (recorded)
+    basic.pause(kBeatMs)
+    // leg_set. Recorded either way: the sink fires for a stop too, so the step is in the take
+    // even when the wheels are not driven.
+    if (kDriveWheels) {
+        r300.motor(0, 30, 800)
+    } else {
+        r300.motor(0, 0, 0)
+    }
+    basic.pause(kBeatMs)
+    r300.emoji(r300.Emoji.Cool)              // emo_set — NOT recorded
+    basic.pause(kBeatMs)
+    r300.volume(80)                          // vol_set + R300's vol_done round trip — NOT recorded
+    basic.pause(kBeatMs)
+}
+
+// ---------------------------------------------------------------------------
+// AUTO BRING-UP: once the link is really up, touch every op once — and publish the tool on the
+// first session only.
+//
+// MCP FIRST. Every other op's result is visible on the robot the moment it is sent; the tool
+// is the only one you cannot see until you speak to it, so it is the one worth having in the
+// log first thing.
 //
 // The trigger is the first `live` cycle, not `hello`. R300 does not start its live check
 // until it has seen our hello ack (protocol.md 8), so a live cycle is the earliest proof
@@ -148,25 +271,33 @@ function protocolSweep(driveWheels: boolean): void {
 // Why automatic: the first version needed a held B, and the bench run produced a log with
 // 60 flawless live cycles and not one command. Nothing was wrong with the button — R300
 // simply was not running when it was pressed, so the request had nowhere to go and the log
-// could not show it. Waiting for the link removes the operator from that loop, and it
-// doubles as the quickest way to tell WHICH firmware is flashed: a sweep that starts by
-// itself can only have come from this file.
+// could not show it. Waiting for the link removes the operator from that loop.
 //
 // ⚠️ R300 resets every time a monitor is attached, and re-handshakes whenever its live check
-// loses the micro:bit — and each of those opens a new session, so this fires again unprompted.
-// It therefore runs with `driveWheels = false`, which sends a stop in place of the one
-// wheel-driving step. Hold B for the full version when you actually want to see it move.
+// loses the micro:bit — and each of those opens a new session, so the loop below re-arms on
+// every one of them. That is what performHighFive() wants. It is NOT what the recording wants:
+// the tool is meant to belong to the take that created it, never to outlive it. See autoPublished.
+// Nothing here drives a wheel — see kDriveWheels. Hold B for the full 19-step sweep when you want
+// the per-op record instead.
 // ---------------------------------------------------------------------------
-const kAutoSweep = true
+const kAutoBringUp = true
 const kLiveToSweepMs = 1000
 const kCountdownMs = 3000
 
-// One sweep per SESSION, not one per power-on. R300 restarts on every monitor attach, and a
-// micro:bit that swept only once would sit through every one of them doing nothing — which is
-// exactly how a real regression goes unnoticed. sessionEpoch ticks whenever R300 opens a new
-// handshake, so this loops and sweeps again each time the other end comes back, including when
-// R300 reboots while this micro:bit keeps running.
-if (kAutoSweep) {
+// One bring-up per SESSION, not one per power-on. performHighFive() costs nothing to repeat, and
+// a micro:bit that ran it once would sit through every later R300 restart doing nothing — which
+// is exactly how a real regression goes unnoticed. sessionEpoch ticks whenever R300 opens a new
+// handshake, so this loops each time the other end comes back, including when R300 reboots while
+// this micro:bit keeps running.
+//
+// 🔴 The recorded tool is the ONE thing here that must NOT be repeated. R300 keeps a take in
+// PSRAM and never writes it to NVS, so an R300 restart really does drop the tool — and
+// re-publishing on every new session would quietly undo exactly that: the tool would become
+// permanent-in-practice and the hands would move on every monitor attach. The tool belongs to
+// its recording, so the automatic path publishes ONCE per micro:bit power-on and then leaves it
+// alone. After an R300 restart the only way back is a deliberate logo long-press.
+let autoPublished = false
+if (kAutoBringUp) {
     let sweptEpoch = -1
     control.inBackground(function () {
         while (true) {
@@ -176,16 +307,29 @@ if (kAutoSweep) {
             sweptEpoch = r300.sessionEpoch
             basic.pause(kLiveToSweepMs)
             // Shown so "which session is this" is answerable without a cable: the matrix is the
-            // only evidence this firmware has that the sweep re-armed rather than merely ran.
+            // only evidence this firmware has that the bring-up re-armed rather than merely ran.
             basic.showNumber(r300.sessionEpoch)
             basic.pause(500)
-            // Not a nicety: the countdown below is the only warning before the sweep runs, and one
-            // of its steps energises a motor.
+            // The countdown is the only warning before the hands move, and that only happens on
+            // the first session; later ones just show it. Nothing on this side can recall a take
+            // once it has been armed, so a warning that is sometimes unnecessary is the right
+            // trade — an unnecessary one is free, a missing one is not.
             for (let n = 3; n > 0; n--) {
                 basic.showNumber(n)
                 basic.pause(kCountdownMs / 3)
             }
-            protocolSweep(false)   // auto: never drives the wheels
+            // ⚠️ Once per power-on, NOT once per session — see autoPublished. A micro:bit that
+            // re-published here would be re-creating the tool on every R300 restart, which is the
+            // persistence this is deliberately avoiding.
+            if (!autoPublished) {
+                autoPublished = true
+                recordHighFive()
+            } else {
+                // Later sessions still PERFORM the routine; only the PUBLISHING is one-shot.
+                // Without this the bring-up would go silent after the first R300 restart, and a
+                // dead link would then look exactly like a link with nothing to say.
+                performHighFive()
+            }
         }
     })
 }
@@ -212,33 +356,19 @@ input.onButtonPressed(Button.B, function () {
     basic.showString(r300.arm(0, -1))    // and back
 })
 
-// Logo LONG press: record a routine and hand it to the AI.
+// Logo LONG press: publish the routine as a tool, on demand.
 //
-// On a long press rather than another button because A / B / A+B / P2 are all taken. Note
-// that the logo's short-press face test above still fires on the way in, so the face advances
-// by one each time you record — cosmetic, and the alternative was inventing a new gesture
-// that would then fire during normal handling.
+// On a long press rather than another button because A / B / A+B / P2 are all taken. Note that
+// the logo's short-press face test above still fires on the way in, so the face advances by one
+// each time you record — cosmetic, and the alternative was inventing a new gesture that would
+// then fire during normal handling.
 //
-// The whole flow is one press. Between takeStart and takeFinish the A and B buttons keep
-// working normally, because every MakeCode event handler runs in its own fibre and this one is
-// parked in basic.pause() — that is what lets you perform the routine being recorded.
-const kRecordWindowMs = 10000
+// A thin wrapper over recordHighFive(), which the automatic bring-up also calls — the recording
+// itself is documented at that function. Worth keeping as a manual trigger because it is the
+// only way to re-publish WITHOUT waiting for an R300 restart, and because it keeps the whole
+// flow reachable by hand when kAutoBringUp is switched off.
 input.onLogoEvent(TouchButtonEvent.LongPressed, function () {
-    // 1. Name it (1-16 chars of a-z, 0-9, _ — it becomes part of the AI's tool name) and say
-    //    what it does. R300 needs a name staged before it will start a take.
-    basic.showString(r300.describe("wave", "waves hello"))
-    basic.pause(300)
-    // 2. Arm the recorder. Moves R300 accepts from here on are captured AND still happen live.
-    basic.showString(r300.takeStart())
-    // 3. Perform the routine: A drives the wheels, B moves a hand.
-    basic.pause(kRecordWindowMs)
-    // 4. Commit it. R300 registers a tool called self.microbit.wave that the voice AI can call.
-    basic.showString(r300.takeFinish())
-    basic.pause(300)
-    // 5. What R300 actually committed: moves captured, then moves THROWN AWAY.
-    //    The second number is the number that matters — anything above 0 means the routine ran
-    //    past R300's 64-step ceiling and is incomplete, and nothing else on this side says so.
-    basic.showNumber(r300.lastTakeSteps)
-    basic.pause(1000)
-    basic.showNumber(r300.lastTakeDrop)
+    // A press landing mid-take is refused rather than queued, and the icon is what keeps that
+    // from looking like a dead button.
+    if (!recordHighFive()) basic.showIcon(IconNames.Confused)
 })
