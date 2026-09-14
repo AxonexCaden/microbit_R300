@@ -186,10 +186,10 @@ namespace r300 {
      * Start recording. Every move R300 ACCEPTS from here on is captured, so perform the routine
      * AFTER this returns. The moves still happen live while you record them, so you are watching
      * the routine being built.
-    //% blockId=r300_take_start block="start recording moves"
-    //% weight=88
      * The name must already have been sent with describe(). Returns "ok" once R300 is armed.
      */
+    //% blockId=r300_take_start block="start recording moves"
+    //% weight=88
     export function takeStart(): string {
         return send("mcp_take", "{\"state\":\"start\"}")
     }
@@ -198,12 +198,12 @@ namespace r300 {
      * Stop recording and publish it as a tool. R300 answers "ok" for the take itself, and then
      * reports the finished tool separately through lastTakeName / lastTakeSteps / lastTakeDrop.
      *
-    //% blockId=r300_take_finish block="finish recording as an AI tool"
-    //% weight=87
      * 🔴 Read lastTakeDrop. R300 keeps at most 64 moves; anything past that still runs but is not
      * recorded, and drop > 0 is the only sign on this side that the routine is incomplete.
      * A take with no moves in it is refused with "badarg", as is finishing without starting.
      */
+    //% blockId=r300_take_finish block="finish recording as an AI tool"
+    //% weight=87
     export function takeFinish(): string {
         return send("mcp_take", "{\"state\":\"finish\"}")
     }
@@ -316,12 +316,12 @@ namespace r300 {
     /**
      * Move the hands. a1 = right hand, a2 = left hand, physical degrees 0..180
      * (0 = forward, 90 = down, 180 = back). Pass -1 for a hand to leave it alone: the key is
+     * then left out of the request, because 0 is a real angle and cannot mean "don't move".
+     */
     //% blockId=r300_arm block="move hands to %a1 and %a2 degrees"
     //% a1.min=-1 a1.max=180 a1.defl=90
     //% a2.min=-1 a2.max=180 a2.defl=90
     //% weight=93
-     * then left out of the request, because 0 is a real angle and cannot mean "don't move".
-     */
     export function arm(a1: number, a2: number): string {
         let p = "{"
         if (a1 >= 0) p += "\"a1\":" + a1
