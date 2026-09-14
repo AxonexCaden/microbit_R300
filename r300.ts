@@ -347,10 +347,10 @@ namespace r300 {
 // wrapper over the r300 API above — r300 stays the internal API, and these namespaces are the
 // surface students are meant to use. They all return void, so each one drops into "on start"
 // as a plain statement block; the answer R300 sends back is discarded (that report belongs in
+// a status block, not in every action).
+//
 // The r300.* blocks above are hidden from the toolbox (blockHidden in their annotations),
-// so this is everything a student sees; r300 itself stays callable from TypeScrip
-// ⚠️ The r300.* blocks above are still visible in the toolbox until they are hidden — a
-// separate change that touches r300's own annotations. Until then both sets exist.
+// so this is everything a student sees; r300 itself stays callable from TypeScript.
 // ---------------------------------------------------------------------------
 
 //% color="#AA278D" icon="\uf013" block="R300 Core"
@@ -446,16 +446,38 @@ namespace r300_speaker {
 //% color="#8E44AD" icon="\uf0d0" block="R300 MCP"
 //% groups="['MCP Setup']"
 namespace r300_mcp {
+    // The description is what the voice AI reads to decide when to call the tool, and it is
+    // the one field a student types that can run past the wire's 127-byte line (protocol.md
+    // 9.7 allows about 34 characters in the worst case). 32 keeps the line safely under it
+    // AND keeps the text short enough to be useful as a tool description. A longer one is
+    // REFUSED, never truncated: a quiet fix-up would look like it worked while the AI only
+    // got half a clue.
+    const DESC_MAX = 32
+
+    // Local refusals show the limit that blocked them on the LED. Nothing was sent, so
+    // there is no ack and nothing in R300's log to find.
+    function refuse(limit: number): void {
+        basic.showNumber(limit)
+        basic.pause(1000)
+        basic.clearScreen()
+    }
+
     /**
      * Name the routine about to be recorded and say what it does. Call it BEFORE
      * startRecording(). The name must be 1-16 characters of a-z, 0-9 or _ — it becomes
      * part of the AI's tool name. Calling it again with the same name appends to the
      * description.
+     * Keep the description to 32 characters or fewer — a longer one is refused and shows
+     * 32 on the LED (nothing is sent to R300).
      */
     //% blockId=r300_mcp_name block="name recording %name described as %desc"
     //% weight=90
     //% group="MCP Setup"
     export function nameRecording(name: string, desc: string): void {
+        if (desc.length > DESC_MAX) {
+            refuse(DESC_MAX)
+            return
+        }
         r300.describe(name, desc)
     }
 
