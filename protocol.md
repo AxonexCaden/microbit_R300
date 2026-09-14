@@ -292,7 +292,11 @@ R300 -> mb   : {"v":1,"id":201,"t":"fin","op":"vol_done","p":{"rtt":8},"ck":11}
 - 🔴 **`vol_done` 唔保證一定嚟。** 佢冇 retry：音量無論點都已經設咗，而條 link 生唔生存係 `live` 話事，唔係佢。micro:bit 側**唔可以**靠等 `vol_done` 嚟決定下一步。
 - ⚠️ **最新取代（latest-wins）**：學生喺 `forever` 入面掃音量，R300 只會就**最後嗰個值**發一次 `vol_done`，唔會逐格回。
 
-### 9.7 `mcp_desc` / `mcp_take` / `mcp_done` —— 錄低一段動作，變成 AI 叫得郁嘅 tool（**R300 側實作**）
+### 9.7 `mcp_desc` / `mcp_take` / `mcp_done` —— 錄低一段動作，變成 AI 叫得郁嘅 tool（**兩邊都實作**）
+
+⚠️ **micro:bit 側由 `r300.describe()` / `r300.takeStart()` / `r300.takeFinish()` 發出；`mcp_done` 由 `protocol.ts` 嘅 `handleLine()` 收到，結果喺 `r300.lastTakeName` / `.lastTakeSteps` / `.lastTakeDrop`。**
+
+🔴 **`mcp_done` 係 R300 唯一一個「發一次、唔重試」嘅 req。** 收到冇 handler 嘅話佢會答 `noop`，而 R300 只會 log 一句失敗就當冇回事 —— **嗰次錄影嘅 `steps`／`drop` 就永久消失**，micro:bit 永遠唔會知段舞截咗。所以呢個 op 喺 dispatch table 入面係一定要有嘅（2026-09-13 之前一直冇，即係每次錄影都靜靜雞掉失呢兩個數）。
 
 學生自己寫嘅動作（`leg_set`／`arm_set`）可以錄低，然後喺 R300 註冊成一個 MCP tool，之後**用把口叫個名**就播得返。
 

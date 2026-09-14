@@ -1,4 +1,4 @@
-//% color="#AA278D" weight=100 icon="" block="R300"
+//% color="#AA278D" weight=100 block="R300"
 namespace r300 {
     let connected = false
 
@@ -36,15 +36,28 @@ namespace r300 {
     // ---------------------------------------------------------------------------
 
     const kAckTimeoutMs = 500
+    // Longest a description can be and still fit inside ONE request line: 127 bytes minus the
+    // envelope, the 16-char name and a 3-digit id leaves about this many (protocol.md 9.7).
+    const kMaxDescChars = 34
+    // How long stopNow() gives a request to abandon itself before it gives up on it. The
+    // give-up path is only reached by a sender wedged somewhere other than its wait loop.
+    const kStopWaitMs = 300
     let nextId = 0
     let waitId = -1
     let waitOp = ""
     let waitState = ""
     let busy = false
+    // Set by stopNow() to tell the request in flight to stand down. sendOne checks it on every
+    // 1ms tick of its wait loop, so this normally costs about a millisecond.
+    let abandoned = false
 
     function noteReply(id: number, op: string, p: any): void {
         if (id != waitId || op != waitOp) return
         if (waitState != "") return                 // already answered; a late duplicate changes nothing
+        // p is whatever the far end put after `"p":` — a damaged or hand-built line can leave it
+        // missing or not an object at all, and this runs inside the RX handler, so a throw here
+        // takes the link down for something as harmless as an ack with no payload.
+        if (p === undefined || p === null || typeof p != "object") { waitState = "err"; return }
         const st = p["st"]
         const e = p["e"]
         if (st == "ok") waitState = "ok"
@@ -70,8 +83,9 @@ namespace r300 {
     export function send(op: string, pJson: string): string {
         if (busy) return "busy"
         busy = true
+        abandoned = false     // a fresh request waits for its own ack, not the last one's
         const result = sendOne(op, pJson)
-        busy = false          // one release point: sendOne has three exits
+        busy = false          // the single release point: every sendOne exit passes through here
         return result
     }
 
@@ -88,7 +102,12 @@ namespace r300 {
             const sentAt = control.millis()
             serial.writeString(line + "\n")
             const deadline = sentAt + kAckTimeoutMs
-            while (waitState == "" && control.millis() < deadline) basic.pause(1)
+            while (waitState == "" && control.millis() < deadline) {
+                // stopNow() asked whoever is in flight to stand down. Nothing this request was
+                // doing is wanted any more, and the stop cannot go out until we leave.
+                if (abandoned) return "stopped"
+                basic.pause(1)
+            }
             if (waitState == "") { last = "timeout"; continue }
             if (waitState == "badck") { last = "badck"; continue }
             waitId = -1
@@ -107,6 +126,71 @@ namespace r300 {
      */
     export function motor(rot: number, fwd: number, ms: number): string {
         return send("leg_set", "{\"rot\":" + rot + ",\"fwd\":" + fwd + ",\"ms\":" + ms + "}")
+    }
+
+    /**
+     * Stop the wheels NOW. Unlike motor(0, 0, 0), this is allowed to interrupt a request that is
+     * still in flight — which is the whole point of an emergency stop, and the one case where
+     * "one request at a time" has to give way.
+     *
+     * motor(0, 0, 0) does NOT work as a stop button. Every MakeCode button handler runs in its
+     * own fiber, so pressing the stop while another move is waiting for its ack reaches send()'s
+     * in-flight guard and comes back "busy" WITHOUT SENDING ANYTHING — and the wheels carry on
+     * turning for whatever was left of that move. That is what this exists for.
+     */
+    export function stopNow(): string {
+        abandoned = true
+        // The sender sees the flag on its next 1ms tick, so this normally costs about a
+        // millisecond. The bound only matters for a request wedged somewhere else, and then we
+        // report "busy" rather than put a second request on top of the first.
+        const deadline = control.millis() + kStopWaitMs
+        while (busy && control.millis() < deadline) basic.pause(1)
+        if (busy) return "busy"
+        return send("leg_set", "{\"rot\":0,\"fwd\":0,\"ms\":0}")
+    }
+
+    // ---------------------------------------------------------------------------
+    // Recording — perform a routine once and let the AI trigger it by name afterwards.
+    //
+    // Three separate calls, deliberately NOT one blocking record(): each send() waits up to
+    // 1.5 seconds for R300's ack, and the moves you want captured have to happen BETWEEN start
+    // and finish. The student presses something for each; see test.ts for the whole flow.
+    // ---------------------------------------------------------------------------
+
+    /**
+     * Name the routine you are about to record, and say what it does. Call it BEFORE takeStart().
+     * The name must be 1-16 characters of a-z, 0-9 or _ — it becomes part of the AI's tool name,
+     * so no spaces and no capitals.
+     * Calling it again with the SAME name APPENDS to the description, which is how a description
+     * longer than one line gets sent: pass at most kMaxDescChars (34) characters at a time.
+     */
+    export function describe(name: string, desc: string): string {
+        // Caught here rather than left to send(), because "long" is the one failure a student can
+        // actually fix — by splitting the description across several describe() calls.
+        if (desc.length > kMaxDescChars) return "long"
+        return send("mcp_desc", "{\"name\":\"" + name + "\",\"desc\":\"" + desc + "\"}")
+    }
+
+    /**
+     * Start recording. Every move R300 ACCEPTS from here on is captured, so perform the routine
+     * AFTER this returns. The moves still happen live while you record them, so you are watching
+     * the routine being built.
+     * The name must already have been sent with describe(). Returns "ok" once R300 is armed.
+     */
+    export function takeStart(): string {
+        return send("mcp_take", "{\"state\":\"start\"}")
+    }
+
+    /**
+     * Stop recording and publish it as a tool. R300 answers "ok" for the take itself, and then
+     * reports the finished tool separately through lastTakeName / lastTakeSteps / lastTakeDrop.
+     *
+     * 🔴 Read lastTakeDrop. R300 keeps at most 64 moves; anything past that still runs but is not
+     * recorded, and drop > 0 is the only sign on this side that the routine is incomplete.
+     * A take with no moves in it is refused with "badarg", as is finishing without starting.
+     */
+    export function takeFinish(): string {
+        return send("mcp_take", "{\"state\":\"finish\"}")
     }
 
 

@@ -125,7 +125,14 @@ micro:bit (P1 RX) ←────────── R300 (GPIO10 TX, UART port=0
 |---|---|---|
 | `hello` | R300 → micro:bit | ✅ 兩邊都實作。R300 每 500ms 發到有 ack 為止；micro:bit 回 `{"st":"ok","ext":"0.1.0"}` |
 | `live` | R300 → micro:bit | ✅ 兩邊都實作。handshake 成功之後才開始，micro:bit 回 `{"st":"ok"}` |
-| `emo_set` / `leg_set` / `arm_set` | micro:bit → R300 | ⏳ 格式已定（見 `protocol.md` 第 9 節），未實作 |
+| `vol_done` | R300 → micro:bit | ✅ 兩邊都實作。R300 確認音量真係落咗，值喺 `p.vol` |
+| `mcp_done` | R300 → micro:bit | ✅ 兩邊都實作。R300 確認段舞註冊咗，帶 `name`／`steps`／`drop`。⚠️ **R300 只發一次、唔重試**（音量點都落咗、條 link 生唔生存係 `live` 話事），所以 micro:bit 收唔到就係永久失去嗰次嘅兩個數 |
+| `emo_set` | micro:bit → R300 | ✅ 兩邊都實作（`r300.emoji()`）。monitor 眼睛板嘅面 |
+| `leg_set` | micro:bit → R300 | ✅ 兩邊都實作（`r300.motor()`）。車輪 |
+| `arm_set` | micro:bit → R300 | ✅ 兩邊都實作（`r300.arm()`）。兩隻手 |
+| `vol_set` | micro:bit → R300 | ✅ 兩邊都實作（`r300.volume()`）。喇叭音量 0..100 |
+| `mcp_desc` | micro:bit → R300 | ✅ 兩邊都實作（`r300.describe()`）。替錄影改名同描述 |
+| `mcp_take` | micro:bit → R300 | ✅ 兩邊都實作（`r300.takeStart()`／`r300.takeFinish()`）。開始錄／收貨 |
 
 ### 點解要 envelope（v0 嘅三個死症）
 
@@ -154,21 +161,45 @@ serial.setTxBufferSize(128)
 
 ## `r300.ts` 提供咩 Block？
 
-**Block 得一個：**
+**Blocks 畫面有兩個：**
 
 | Block | TypeScript | 用途 |
 |---|---|---|
 | `connect to R300` | `r300.connect(): void` | 開機（`on start`）做一次：redirect serial 去 P0/P1、加大 buffer、註冊 RX handler |
+| `show face [happy]` | `r300.emoji(e): string` | 喺 monitor 眼睛板顯示一個表情。19 個名（happy / sad / angry / …），只可以喺下拉揀 |
 
-**另外有幾個 TypeScript function—— 特登未有 `//%`，所以 Blocks 畫面唔會見到（寫嚟試 motor 用）：**
+⚠️ `connect()` 特登回 `void`：有回傳值嘅 function 喺 Blocks 畫面會變成橢圓形 reporter block，只可以插入其他 block 個窿，**拖唔入 `on start`**。
+
+**其餘 8 個係 TypeScript function —— 特登未有 `//%`，所以 Blocks 畫面唔會見到。** 佢哋係完整嘅 API（唔係「寫嚟試用」），但要用就要喺 MakeCode 切去 JavaScript 打：
 
 | Function | 做咩 |
 |---|---|
 | `r300.motor(rot, fwd, ms): string` | 腿。`rot`／`fwd` = -100..100（100 = 全速）、`ms` = 0..3000。兩者都 0 = 停車 |
+| `r300.stopNow(): string` | ⚠️ 停車，同 `motor(0,0,0)` **唔同**：佢會打斷仲喺飛嘅 request。`motor(0,0,0)` 撞正有 request 飛緊嘅時候會**靜靜哋回 `"busy"` 而一個字都唔發**，車繼續行 —— 所以應急停車一定要用呢個 |
 | `r300.arm(a1, a2): string` | 手。`a1` = 右手、`a2` = 左手，physical 0..180（0 指前、90 向下、180 指後）；傳 **-1 = 唔都嗰隻手** |
+| `r300.volume(v): string` | 喇叭音量 0..100。R300 另發 `vol_done` 確認真係落咗，個值喺 `r300.lastVolume`（**唔係**你要求咗嗰個 —— 兩個係唔同嘅聲明） |
+| `r300.describe(name, desc): string` | 錄影之前改名同描述。名 1-16 字 `[a-z0-9_]`；**同名再叫 = 描述接落去**，所以長描述分幾句 send（每次 ≤ 34 字） |
+| `r300.takeStart(): string` | 開始錄。名要事先 `describe()` 過 |
+| `r300.takeFinish(): string` | 收貨，R300 註冊成 MCP tool，之後 AI 叫得郁個名 |
 | `r300.send(op, pJson): string` | 通用版，自己砌 payload |
 
-回傳值係 R300 答乜：`"ok"`／`"badarg"`／`"noop"`／`"badver"`／`"busy"`／`"timeout"`／`"long"`（行太長，唔會送出）。🔴 **`"ok"` 只代表 R300 收咗，唔代表已經都完** —— 呢條 link 上面根本睇唔到物理結果。
+**連接狀態：**
+
+| 變數 | 意思 |
+|---|---|
+| `r300.liveCount` | R300 答過幾多次 `live`。**> 0 = 握手真係完成、條 link 通咗。** R300 收到 `hello` 嘅 ack 之後先開始 `live`，所以見到 `hello` 只代表握手**開始**咗，見到 `live` 才代表**完成**。`test.ts` 嘅自動 sweep 就係等呢個數 |
+
+**錄完之後嘅結果喺三個變數（R300 經 `mcp_done` 報返）：**
+
+| 變數 | 意思 |
+|---|---|
+| `r300.lastTakeName` | 註冊咗嘅名 |
+| `r300.lastTakeSteps` | 錄到幾多步 |
+| `r300.lastTakeDrop` | 🔴 **掉咗幾多步。** R300 上限 64 步，超出嘅會照樣即時執行但**唔會錄入去**。呢個數 > 0 就代表段舞係**截斷咗**，而 micro:bit 側冇第二個地方睇得到 |
+
+⚠️ `describe()` 同兩個 `take*()` 係**分開三粒**，唔係一個 blocking `record()`：每次 `send()` 要等 R300 個 ack（最多 1.5 秒），而你要做動作嘅時間係喺 start 同 finish **之間**。`test.ts` 嘅 logo 長按就係示範呢個流程。
+
+回傳值係 R300 答乜：`"ok"`／`"badarg"`／`"noop"`／`"badver"`／`"busy"`／`"timeout"`／`"long"`（行太長，唔會送出）／`"stopped"`（被 `stopNow()` 打斷）。🔴 **`"ok"` 只代表 R300 收咗，唔代表已經做咗** —— 呢條 link 上面根本睇唔到物理結果。
 
 ```ts
 input.onButtonPressed(Button.A, function () {
@@ -176,7 +207,7 @@ input.onButtonPressed(Button.A, function () {
 })
 ```
 
-⚠️ 呢個 sender **係測試用**，唔係最終 library 嘅形狀：佢係**阻塞式**（`basic.pause(1)` polling，最多等 3 × 500ms），最終應該係背景 fiber + 最新取代。傳送規則跟足合約：一次一個 request、每次新 `id`、超時／`badck` 用**同一個 `id` 重送**（所以 R300 分得出係重送、唔會郁兩次）。
+⚠️ **函數名同參數係最終嘅，但個 sender 內部仲係暫時形狀**：佢係**阻塞式**（`basic.pause(1)` polling，最多等 3 × 500ms），所以 `motor()` 一叫就會佔住成個 fiber 最多 1.5 秒，而且**一次只可以有一個 request 飛**（撞正就回 `"busy"` —— 就係上面 `stopNow()` 存在嘅原因）。最終應該係背景 fiber + 最新取代，但嗰個係 Phase 5 嘅嘢，唔影響而家嘅合約。傳送規則已經跟足：一次一個 request、每次新 `id`、超時／`badck` 用**同一個 `id` 重送**（所以 R300 分得出係重送、唔會郁兩次）。
 
 ⚠️ 舊版嗰四個 block（`sendMessage`／`testLink`／`controlMotor`／`isConnected`）建基於 v0，已經拆唨。
 
@@ -201,7 +232,7 @@ microbit_R300/                    ← repo root 本身就係 MakeCode extension
 ├── pxt.json                      ← extension manifest（dependencies: core / radio / microphone）
 ├── protocol.md                   ← 📖 v1 wire format 合約（**唯一真相來源**）
 ├── protocol.ts                   ← 協議層：ck 驗證、envelope 分派、砌回覆
-├── r300.ts                       ← ⭐ library：`r300` namespace + 唯一嘅 block（`connect`）
+├── r300.ts                       ← ⭐ library：`r300` namespace + 兩個 block（`connect`、`show face`）
 ├── test.ts                       ← 本機測試（`testFiles`，唔會跟去學生 project）
 ├── tsconfig.json                 ← pxt build 用（pxt 自動生成）
 ├── package.json                  ← 釘住 pxt-microbit target 版本（+ package-lock.json）

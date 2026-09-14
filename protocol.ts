@@ -14,6 +14,24 @@ namespace r300 {
     // R300's own firmware version, from the `fw` field of its `hello`.
     export let peerFw = ""
 
+    // How many `live` requests R300 has sent and we have answered. Non-zero is the only
+    // proof on this side that the link is really UP: R300 does not start its live check
+    // until it has seen our hello ack (protocol.md 8), so seeing `hello` only means the
+    // handshake has STARTED, while answering a live cycle means it COMPLETED.
+    // It is also the signal that survives a micro:bit reset. A micro:bit flashed while
+    // R300 keeps running never sees another hello — R300 is long past that phase — so
+    // waiting on peerFw there would wait forever.
+    export let liveCount = 0
+
+    // The last recording R300 reported committing, from its `mcp_done` (protocol.md 9.7):
+    // the tool's name, how many moves it captured, and how many it THREW AWAY because the
+    // take ran past R300's 64-step ceiling. All three stay empty/-1 until one lands.
+    // ⚠️ `lastTakeDrop` is the only place a truncated routine shows up on this side — a take
+    // that lost its tail is otherwise indistinguishable from a complete one here.
+    export let lastTakeName = ""
+    export let lastTakeSteps = -1
+    export let lastTakeDrop = -1
+
     // Called for every ack that survives the envelope, ck and v checks, so a sender can be
     // woken by the reply it is waiting for. A no-op until r300.ts's sender installs it — a
     // plain function rather than a nullable one so no caller needs an undefined check.
@@ -77,7 +95,15 @@ namespace r300 {
     // Reply line for one received line (without "\n"), or "" to stay silent.
     export function handleLine(line: string): string {
         if (line.length < 2 || line.charCodeAt(0) != 123) return ""
-        const msg = JSON.parse(line)
+        // R300 only ever sends a line it built, but a damaged or truncated one reaches here as
+        // arbitrary bytes following a "{", and JSON.parse throws on those. This runs inside the
+        // RX event handler, so an exception escaping it takes the link's only reader with it.
+        let msg: any = undefined
+        try {
+            msg = JSON.parse(line)
+        } catch (e) {
+            return ""
+        }
         if (msg === undefined || msg === null) return ""
         const t = msg["t"]
         const id = msg["id"]
@@ -90,14 +116,27 @@ namespace r300 {
         // sender that does not understand this envelope anyway.
         if (lastIndexOf(line, ",\"ck\":") < 0) return ""
         if (!verifyCk(line)) return canReply ? buildLine("ack", id, op, "{\"st\":\"err\",\"e\":\"badck\"}") : ""
-        if (msg["v"] !== PROTOCOL_VERSION) return canReply ? buildLine("ack", id, op, "{\"st\":\"err\",\"e\":\"badver\"}") : ""
+        if (msg["v"] !== PROTOCOL_VERSION) {
+            // protocol.md 7 #3: a peer that disagrees about `v` answers with a badver ack built
+            // on ITS OWN version, so that reply fails the very check we are standing in. Without
+            // the exception below, a sender sits out its whole retry budget and reports "timeout"
+            // for what is really a version mismatch — the one failure it cannot resend its way out
+            // of. `ck` is still enforced above, so a forged line cannot get in through this door.
+            const bp = msg["p"]
+            if (t == "ack" && idOk && typeof op == "string" &&
+                bp !== undefined && bp !== null && bp["e"] == "badver") onReply(id, op, bp)
+            return canReply ? buildLine("ack", id, op, "{\"st\":\"err\",\"e\":\"badver\"}") : ""
+        }
         // Valid ack/fin land here too: answering either would ping-pong forever (§6). An ack
         // is also the one thing a sender waiting on this id wants to hear about.
         if (!canReply) {
             if (t == "ack" && idOk && typeof op == "string") onReply(id, op, msg["p"])
             return ""
         }
-        if (op == "live") return buildLine("ack", id, op, "{\"st\":\"ok\"}")
+        if (op == "live") {
+            liveCount++
+            return buildLine("ack", id, op, "{\"st\":\"ok\"}")
+        }
         // R300 raises this itself once the volume has actually landed (protocol.md 9.6).
         // Nothing to do but confirm it: answering "noop" would make R300 log the whole
         // two-stage path as failed even though the volume was set.
@@ -110,6 +149,21 @@ namespace r300 {
             const p = msg["p"]
             if (p !== undefined && p !== null && typeof p["fw"] == "string") peerFw = p["fw"]
             return buildLine("ack", id, op, "{\"st\":\"ok\",\"ext\":\"" + EXT_VERSION + "\"}")
+        }
+        // R300's SECOND reply to a recording (protocol.md 9.7): the mcp_take ack already said
+        // "taken", this one says the tool is now live and how big it turned out to be. R300
+        // sends it once and never retries it, so a request landing here with no branch to catch
+        // it loses that recording's step count for good — which is exactly what happened while
+        // this op was missing: the take worked, and the micro:bit could never tell anyone.
+        if (op == "mcp_done") {
+            const p = msg["p"]
+            if (p !== undefined && p !== null && typeof p["name"] == "string" &&
+                typeof p["steps"] == "number" && typeof p["drop"] == "number") {
+                lastTakeName = p["name"]
+                lastTakeSteps = p["steps"]
+                lastTakeDrop = p["drop"]
+            }
+            return buildLine("ack", id, op, "{\"st\":\"ok\"}")
         }
         return buildLine("ack", id, op, "{\"st\":\"err\",\"e\":\"noop\"}")
     }

@@ -9,9 +9,11 @@ input.onButtonPressed(Button.A, function () {
     basic.showString(r300.motor(0, 50, 1000))
 })
 
-// A+B: stop, in case the move above is somehow still running.
+// A+B: stop. NOT motor(0, 0, 0) — that one refuses with "busy" while the move above is still
+// waiting for its ack, and refuses silently, so the wheels keep turning. r300.stopNow() is
+// allowed to interrupt the request in flight, which is what a stop button has to do.
 input.onButtonPressed(Button.AB, function () {
-    basic.showString(r300.motor(0, 0, 0))
+    basic.showString(r300.stopNow())
 })
 
 // P2 (touch P2 and GND): flip the volume between quiet and loud.
@@ -41,13 +43,181 @@ input.onLogoEvent(TouchButtonEvent.Pressed, function () {
     faceIndex = (faceIndex + 1) % kFaces.length
 })
 
-// B: move ONE hand, so this press answers "which hand is a1?".
-// Deliberately asymmetric: arm(90, 90) moves both to the same angle and therefore proves
+// ---------------------------------------------------------------------------
+// B HELD (~1s): protocol sweep — one request per second.
+//
+// Nothing on this side can see the wire, so the real record of this test is R300's console:
+// every request, every ack, and the reason for every refusal land there in order. The matrix
+// only says pass / fail per step, so the robot can be checked without a cable.
+//
+// On a HELD B rather than a gesture of its own, because A, A+B, P2 and both logo events are
+// taken, and because a held button cannot fire by accident the way a shake or a tilt can.
+// ---------------------------------------------------------------------------
+const kSweepGapMs = 1000
+let sweepFails = 0
+let sweepAbort = false
+let sweepRunning = false
+
+// want is what R300 must answer; run performs the request only when the sweep is still live.
+// Passing the request as a function rather than its result is what lets A+B abort: a step that
+// has been called off must not put its request on the wire at all.
+function sweepStep(want: string, run: () => string): void {
+    if (sweepAbort) return
+    const got = run()
+    // A+B set "abandoned" while the request above was in flight. An operator asking for a stop
+    // means stop, not "stop until the next step" — so latch it here, where the cause is known,
+    // and every remaining step skips its request.
+    if (got == "stopped") sweepAbort = true
+    if (got == want) {
+        basic.showIcon(IconNames.Yes)
+    } else {
+        sweepFails++
+        // Show the answer R300 actually gave — a wrong one exists nowhere else on this side.
+        basic.showString(got)
+    }
+    // The gap is between REQUESTS, so a failing step runs slightly long because its answer
+    // needs showing. A pass costs nothing.
+    basic.pause(kSweepGapMs)
+}
+
+function protocolSweep(): void {
+    // Each MakeCode event handler runs in its own fibre, so a B TAP during the sweep would
+    // otherwise start a second sweep alongside this one: the two loops would share sweepFails
+    // and the second would reset the first's counters mid-run. A tap is meant to move a hand;
+    // it must not turn into a second test.
+    if (sweepRunning) return
+    sweepRunning = true
+    sweepFails = 0
+    sweepAbort = false
+    basic.showIcon(IconNames.Target)
+
+    // 1-6: the three ops a student uses, plus emo_set, each one ACCEPTED.
+    sweepStep("ok", () => r300.arm(90, 90))               // 1 both hands down
+    sweepStep("ok", () => r300.motor(0, 30, 800))         // 2 forward 0.8s at 30% ⚠️ it moves
+    sweepStep("ok", () => r300.motor(0, 0, 0))            // 3 stop
+    sweepStep("ok", () => r300.volume(50))                // 4 also runs R300's vol_done round trip
+    sweepStep("ok", () => r300.emoji(r300.Emoji.Happy))   // 5 face on the monitor
+    sweepStep("ok", () => r300.arm(0, 0))                 // 6 hands forward
+
+    // 7-10: the ends of each range that are still legal.
+    sweepStep("ok", () => r300.volume(0))                 // 7
+    sweepStep("ok", () => r300.volume(100))               // 8
+    sweepStep("ok", () => r300.send("arm_set", "{\"a1\":180}"))                    // 9 backward limit
+    sweepStep("ok", () => r300.send("leg_set", "{\"rot\":0,\"fwd\":0,\"ms\":3000}"))  // 10 a stop
+
+    // 11-18: out of range must be REFUSED, never clamped — a silent clamp moves the robot
+    // somewhere nobody asked for. These go through send() instead of the student-facing
+    // wrappers, because the wrappers turn some illegal values into legal ones before the wire
+    // sees them: arm() reads ANY negative hand as "leave it alone", so arm(-1, -1) would send
+    // an empty p and answer badarg for the wrong reason.
+    sweepStep("badarg", () => r300.volume(101))                                       // 11
+    sweepStep("badarg", () => r300.send("vol_set", "{\"vol\":-1}"))                   // 12
+    sweepStep("badarg", () => r300.send("arm_set", "{\"a1\":181}"))                   // 13
+    sweepStep("badarg", () => r300.send("arm_set", "{\"a1\":-1}"))                    // 14 a negative angle
+    sweepStep("badarg", () => r300.send("leg_set", "{\"rot\":101,\"fwd\":0,\"ms\":1000}"))  // 15
+    sweepStep("badarg", () => r300.send("leg_set", "{\"rot\":0,\"fwd\":50,\"ms\":0}"))      // 16 needs a time
+    sweepStep("badarg", () => r300.send("arm_set", "{}"))                             // 17 no hand named
+    sweepStep("badarg", () => r300.send("leg_set", "{\"rot\":0,\"fwd\":0}"))          // 18 ms is required
+
+    // 19: an op nobody registered must SAY so rather than go silent, so the sender gets an
+    // answer instead of burning three 500ms retries on a typo.
+    sweepStep("noop", () => r300.send("bogus_op", "{}"))                              // 19
+
+    // The verdict. An aborted sweep is not a pass whatever the count says: an operator stopped
+    // it, so nothing after the stop was tested.
+    basic.showIcon(sweepFails == 0 && !sweepAbort ? IconNames.Yes : IconNames.No)
+    basic.pause(400)
+    basic.showNumber(sweepFails)
+    sweepRunning = false
+}
+
+// ---------------------------------------------------------------------------
+// AUTO SWEEP: run the sweep by itself once the link is really up.
+//
+// The trigger is the first `live` cycle, not `hello`. R300 does not start its live check
+// until it has seen our hello ack (protocol.md 8), so a live cycle is the earliest proof
+// that the handshake COMPLETED rather than merely started — and it is the only trigger
+// that still works when the micro:bit is flashed while R300 keeps running, because R300
+// finished its hello phase long ago and will never send another one.
+//
+// Why automatic: the first version needed a held B, and the bench run produced a log with
+// 60 flawless live cycles and not one command. Nothing was wrong with the button — R300
+// simply was not running when it was pressed, so the request had nowhere to go and the log
+// could not show it. Waiting for the link removes the operator from that loop, and it
+// doubles as the quickest way to tell WHICH firmware is flashed: a sweep that starts by
+// itself can only have come from this file.
+//
+// ⚠️ Step 2 puts power to the wheels, and R300 resets every time a monitor is attached —
+// so this fires a few seconds after every attach, unprompted. Put the robot where it can
+// drive freely, or set kAutoSweep to false and hold B instead.
+// ---------------------------------------------------------------------------
+const kAutoSweep = true
+const kLiveToSweepMs = 1000
+const kCountdownMs = 3000
+
+if (kAutoSweep) {
+    control.inBackground(function () {
+        while (r300.liveCount == 0) basic.pause(50)
+        basic.pause(kLiveToSweepMs)
+        // Not a nicety: the next thing that happens energises the wheels, and whoever just
+        // attached the cable may still be holding the robot.
+        for (let n = 3; n > 0; n--) {
+            basic.showNumber(n)
+            basic.pause(kCountdownMs / 3)
+        }
+        protocolSweep()
+    })
+}
+
+// B tapped: move ONE hand, so this press answers "which hand is a1?".
+// B HELD for a second: run the protocol sweep above instead.
+// Deliberately asymmetric: arm(90, 90) moves both hands to the same angle and therefore proves
 // only that both hands work — it cannot tell a1 from a2, which is the open question
 // (the 1=right / 2=left mapping is still an assumption, protocol.md 9.5).
 // -1 means "leave that hand alone"; 0 would be a real angle (pointing forward).
+const kSweepHoldMs = 1000
 input.onButtonPressed(Button.B, function () {
+    // onButtonPressed fires on the way DOWN, and micro:bit MakeCode has no long-press event for
+    // A/B (only the V2 logo does), so a held press has to be waited out here before there is
+    // anything to tell the two cases apart.
+    const pressedAt = control.millis()
+    while (input.buttonIsPressed(Button.B)) basic.pause(20)
+    if (control.millis() - pressedAt >= kSweepHoldMs) {
+        protocolSweep()
+        return
+    }
     basic.showString(r300.arm(90, -1))   // whichever hand drops is a1
     basic.pause(1500)
     basic.showString(r300.arm(0, -1))    // and back
+})
+
+// Logo LONG press: record a routine and hand it to the AI.
+//
+// On a long press rather than another button because A / B / A+B / P2 are all taken. Note
+// that the logo's short-press face test above still fires on the way in, so the face advances
+// by one each time you record — cosmetic, and the alternative was inventing a new gesture
+// that would then fire during normal handling.
+//
+// The whole flow is one press. Between takeStart and takeFinish the A and B buttons keep
+// working normally, because every MakeCode event handler runs in its own fibre and this one is
+// parked in basic.pause() — that is what lets you perform the routine being recorded.
+const kRecordWindowMs = 10000
+input.onLogoEvent(TouchButtonEvent.LongPressed, function () {
+    // 1. Name it (1-16 chars of a-z, 0-9, _ — it becomes part of the AI's tool name) and say
+    //    what it does. R300 needs a name staged before it will start a take.
+    basic.showString(r300.describe("wave", "waves hello"))
+    basic.pause(300)
+    // 2. Arm the recorder. Moves R300 accepts from here on are captured AND still happen live.
+    basic.showString(r300.takeStart())
+    // 3. Perform the routine: A drives the wheels, B moves a hand.
+    basic.pause(kRecordWindowMs)
+    // 4. Commit it. R300 registers a tool called self.microbit.wave that the voice AI can call.
+    basic.showString(r300.takeFinish())
+    basic.pause(300)
+    // 5. What R300 actually committed: moves captured, then moves THROWN AWAY.
+    //    The second number is the number that matters — anything above 0 means the routine ran
+    //    past R300's 64-step ceiling and is incomplete, and nothing else on this side says so.
+    basic.showNumber(r300.lastTakeSteps)
+    basic.pause(1000)
+    basic.showNumber(r300.lastTakeDrop)
 })
