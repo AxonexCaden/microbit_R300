@@ -7,6 +7,7 @@ namespace r300 {
      * Once connected the micro:bit answers R300's link check by itself.
      */
     //% blockId=r300_connect block="connect to R300"
+    //% blockHidden=true
     //% weight=100
     export function connect(): void {
         if (connected) return
@@ -81,6 +82,7 @@ namespace r300 {
      * move — which is worse to debug, because it looks exactly like a broken link.
      */
     //% blockId=r300_send block="send %op with payload %pJson"
+    //% blockHidden=true
     //% weight=60
     export function send(op: string, pJson: string): string {
         if (busy) return "busy"
@@ -127,6 +129,7 @@ namespace r300 {
      * The return value says whether R300 *accepted* the request — not that the robot moved.
      */
     //% blockId=r300_motor block="drive rot %rot fwd %fwd for %ms ms"
+    //% blockHidden=true
     //% rot.min=-100 rot.max=100 rot.defl=0
     //% fwd.min=-100 fwd.max=100 fwd.defl=50
     //% ms.min=0 ms.max=3000 ms.defl=1000
@@ -146,6 +149,7 @@ namespace r300 {
      * turning for whatever was left of that move. That is what this exists for.
      */
     //% blockId=r300_stop block="stop driving now"
+    //% blockHidden=true
     //% weight=94
     export function stopNow(): string {
         abandoned = true
@@ -173,6 +177,7 @@ namespace r300 {
      * Calling it again with the SAME name APPENDS to the description, which is how a description
      * longer than one line gets sent: pass at most kMaxDescChars (34) characters at a time.
      */
+    //% blockHidden=true
     //% blockId=r300_describe block="name recording %name described as %desc"
     //% weight=89
     export function describe(name: string, desc: string): string {
@@ -188,6 +193,7 @@ namespace r300 {
      * the routine being built.
      * The name must already have been sent with describe(). Returns "ok" once R300 is armed.
      */
+    //% blockHidden=true
     //% blockId=r300_take_start block="start recording moves"
     //% weight=88
     export function takeStart(): string {
@@ -203,6 +209,7 @@ namespace r300 {
      * A take with no moves in it is refused with "badarg", as is finishing without starting.
      */
     //% blockId=r300_take_finish block="finish recording as an AI tool"
+    //% blockHidden=true
     //% weight=87
     export function takeFinish(): string {
         return send("mcp_take", "{\"state\":\"finish\"}")
@@ -296,6 +303,7 @@ namespace r300 {
      * second without stalling the link. The face then stays until something else changes it.
      */
     //% blockId=r300_emoji block="show face %e"
+    //% blockHidden=true
     //% weight=90
     export function emoji(e: Emoji): string {
         return send("emo_set", "{\"emoji\":\"" + emojiName(e) + "\"}")
@@ -307,6 +315,7 @@ namespace r300 {
      * reports them separately.
      */
     //% blockId=r300_volume block="set volume %v"
+    //% blockHidden=true
     //% v.min=0 v.max=100 v.defl=50
     //% weight=92
     export function volume(v: number): string {
@@ -319,6 +328,7 @@ namespace r300 {
      * then left out of the request, because 0 is a real angle and cannot mean "don't move".
      */
     //% blockId=r300_arm block="move hands to %a1 and %a2 degrees"
+    //% blockHidden=true
     //% a1.min=-1 a1.max=180 a1.defl=90
     //% a2.min=-1 a2.max=180 a2.defl=90
     //% weight=93
@@ -337,8 +347,8 @@ namespace r300 {
 // wrapper over the r300 API above — r300 stays the internal API, and these namespaces are the
 // surface students are meant to use. They all return void, so each one drops into "on start"
 // as a plain statement block; the answer R300 sends back is discarded (that report belongs in
-// a status block, not in every action).
-//
+// The r300.* blocks above are hidden from the toolbox (blockHidden in their annotations),
+// so this is everything a student sees; r300 itself stays callable from TypeScrip
 // ⚠️ The r300.* blocks above are still visible in the toolbox until they are hidden — a
 // separate change that touches r300's own annotations. Until then both sets exist.
 // ---------------------------------------------------------------------------
