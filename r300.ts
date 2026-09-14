@@ -370,9 +370,12 @@ namespace r300_core {
 //% groups="['Drive Control']"
 namespace r300_movement {
     /**
-     * Drive the wheels. rot / fwd are -100..100 percent of full speed, ms is 0..3000 and
-     * says how long the motor board should run for. The wire record of what R300 did with
-     * it lives in R300's console, not here.
+     * Drive the wheels for ms milliseconds and WAIT for the move to finish before the next
+     * block runs. Without the wait the next command lands mid-move and overwrites it, so a
+     * list of drives would only ever show the last one moving. rot / fwd are -100..100 percent
+     * of full speed, and both 0 is a stop. A stop from another event handler still stops the
+     * wheels mid-move, because every handler runs in its own fiber. The wire record of what
+     * R300 did with it lives in R300's console, not here.
      */
     //% blockId=r300_movement_drive block="drive rot %rot fwd %fwd for %ms ms"
     //% rot.min=-100 rot.max=100 rot.defl=0
@@ -382,6 +385,9 @@ namespace r300_movement {
     //% group="Drive Control"
     export function drive(rot: number, fwd: number, ms: number): void {
         r300.motor(rot, fwd, ms)
+        // The command is only the START of the move: R300 hands `ms` to the motor board and
+        // answers straight away, so hold the student's code still until the move is over.
+        basic.pause(ms)
     }
 
     /**
@@ -451,7 +457,7 @@ namespace r300_mcp {
     // 9.7 allows about 34 characters in the worst case). 32 keeps the line safely under it
     // AND keeps the text short enough to be useful as a tool description. A longer one is
     // REFUSED, never truncated: a quiet fix-up would look like it worked while the AI only
-    // got half a clue.
+    // got half a clue. The block text says "(max 32 chars)" — keep the two in step.
     const DESC_MAX = 32
 
     // Local refusals show the limit that blocked them on the LED. Nothing was sent, so
@@ -470,7 +476,7 @@ namespace r300_mcp {
      * Keep the description to 32 characters or fewer — a longer one is refused and shows
      * 32 on the LED (nothing is sent to R300).
      */
-    //% blockId=r300_mcp_name block="name recording %name described as %desc"
+    //% blockId=r300_mcp_name block="name recording %name described as %desc (max 32 chars)"
     //% weight=90
     //% group="MCP Setup"
     export function nameRecording(name: string, desc: string): void {
