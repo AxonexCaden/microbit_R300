@@ -15,9 +15,10 @@ namespace r300 {
         // Hold Button A while resetting to stay on USB serial for debugging.
         if (!input.buttonIsPressed(Button.A)) {
             serial.redirect(SerialPin.P0, SerialPin.P1, BaudRate.BaudRate115200)
-            // MakeCode's 20-byte default buffers cannot hold a single protocol line.
-            serial.setRxBufferSize(128)
-            serial.setTxBufferSize(128)
+            // MakeCode's 20-byte default buffers cannot hold a single protocol line; 254 is
+            // the documented maximum for both.
+            serial.setRxBufferSize(254)
+            serial.setTxBufferSize(254)
         }
         serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function () {
             const reply = handleLine(serial.readLine())
@@ -37,8 +38,9 @@ namespace r300 {
     // ---------------------------------------------------------------------------
 
     const kAckTimeoutMs = 500
-    // Longest a description can be and still fit inside ONE request line: 127 bytes minus the
-    // envelope, the 16-char name and a 3-digit id leaves about this many (protocol.md 9.7).
+    // Longest description one describe() carries; longer text is appended across calls
+    // (protocol.md 9.7). Sentence-sized on purpose -- fitting one 253-byte line is no
+    // longer what sets it.
     const kMaxDescChars = 34
     // How long stopNow() gives a request to abandon itself before it gives up on it. The
     // give-up path is only reached by a sender wedged somewhere other than its wait loop.
@@ -95,11 +97,12 @@ namespace r300 {
 
     function sendOne(op: string, pJson: string): string {
         const id = nextId
-        nextId = nextId >= 127 ? 0 : nextId + 1
+        // Same 0-99 id space as R300's senders; a retry reuses the id it is retrying.
+        nextId = nextId >= 99 ? 0 : nextId + 1
         let last = "timeout"
         for (let attempt = 0; attempt < 3; attempt++) {
-            const line = buildLine("req", id, op, pJson)
-            if (line.length == 0) return "long"     // would not fit R300's 128-byte line buffer
+            const line = buildLine("r", id, op, pJson)
+            if (line.length == 0) return "long"     // would not fit R300's 254-byte line buffer
             waitId = id
             waitOp = op
             waitState = ""
@@ -116,7 +119,7 @@ namespace r300 {
             if (waitState == "badck") { last = "badck"; continue }
             waitId = -1
             // Only a final ack earns a fin; it also carries the round trip time back.
-            serial.writeString(buildLine("fin", id, op, "{\"rtt\":" + (control.millis() - sentAt) + "}") + "\n")
+            serial.writeString(buildLine("f", id, op, "{\"rt\":" + (control.millis() - sentAt) + "}") + "\n")
             return waitState
         }
         waitId = -1
@@ -135,7 +138,7 @@ namespace r300 {
     //% ms.min=0 ms.max=3000 ms.defl=1000
     //% weight=95
     export function motor(rot: number, fwd: number, ms: number): string {
-        return send("leg_set", "{\"rot\":" + rot + ",\"fwd\":" + fwd + ",\"ms\":" + ms + "}")
+        return send("leg_set", "{\"ro\":" + rot + ",\"fd\":" + fwd + ",\"ms\":" + ms + "}")
     }
 
     /**
@@ -159,7 +162,7 @@ namespace r300 {
         const deadline = control.millis() + kStopWaitMs
         while (busy && control.millis() < deadline) basic.pause(1)
         if (busy) return "busy"
-        return send("leg_set", "{\"rot\":0,\"fwd\":0,\"ms\":0}")
+        return send("leg_set", "{\"ro\":0,\"fd\":0,\"ms\":0}")
     }
 
     // ---------------------------------------------------------------------------
@@ -184,6 +187,9 @@ namespace r300 {
         // Caught here rather than left to send(), because "long" is the one failure a student can
         // actually fix — by splitting the description across several describe() calls.
         if (desc.length > kMaxDescChars) return "long"
+        // The name becomes part of a tool name on R300, so its rule ([a-z0-9_], 1-16 chars)
+        // is enforced here too — same answer whether or not the link is up.
+        if (!isToken(name)) return "badarg"
         return send("mcp_desc", "{\"name\":\"" + name + "\",\"desc\":\"" + desc + "\"}")
     }
 
@@ -306,7 +312,7 @@ namespace r300 {
     //% blockHidden=true
     //% weight=90
     export function emoji(e: Emoji): string {
-        return send("emo_set", "{\"emoji\":\"" + emojiName(e) + "\"}")
+        return send("emo_set", "{\"em\":\"" + emojiName(e) + "\"}")
     }
     /**
      * Set the speaker volume, 0..100. Returns "ok" once R300 has ACCEPTED it.
@@ -319,7 +325,7 @@ namespace r300 {
     //% v.min=0 v.max=100 v.defl=50
     //% weight=92
     export function volume(v: number): string {
-        return send("vol_set", "{\"vol\":" + v + "}")
+        return send("vol_set", "{\"vl\":" + v + "}")
     }
 
     /**
@@ -598,8 +604,8 @@ namespace r300_speaker {
 //% groups="['MCP Setup']"
 namespace r300_mcp {
     // The description is what the voice AI reads to decide when to call the tool, and it is
-    // the one field a student types that can run past the wire's 127-byte line (protocol.md
-    // 9.7 allows about 34 characters in the worst case). 32 keeps the line safely under it
+    // the one field a student types that can run past what one protocol line carries
+    // (protocol.md 9.7 chunks it at 34 characters a call). 32 keeps a chunk under that
     // AND keeps the text short enough to be useful as a tool description. A longer one is
     // REFUSED, never truncated: a quiet fix-up would look like it worked while the AI only
     // got half a clue. The block text says "(max 32 chars)" — keep the two in step.

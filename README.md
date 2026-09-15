@@ -1,8 +1,8 @@
 # MicroBit ↔ R300 UART Link
 
-用 MakeCode JavaScript（Static TypeScript）喺 BBC micro:bit 上面，做 R300 嘅 **v1 UART link**。
+用 MakeCode JavaScript（Static TypeScript）喺 BBC micro:bit 上面，做 R300 嘅 **v2 UART link**。
 
-⚠️ **方向係 R300 主導。** micro:bit **唔會主動送任何嘢**：R300 開機之後每 500ms 發一次 `hello`，直到 micro:bit 答為止；handshake 成功之後 R300 就每 500ms 發 `live` 做連線檢查。micro:bit 淨係回應。下面係 2026-09-11 上機 capture 到嘅真實三段：
+⚠️ **方向係 R300 主導。** micro:bit **唔會主動送任何嘢**：R300 開機之後每 500ms 發一次 `hello`，直到 micro:bit 答為止；handshake 成功之後 R300 就每 500ms 發 `live` 做連線檢查。micro:bit 淨係回應。下面係 2026-09-11 上機 capture 到嘅真實三段（**v1 原文**；v2 欄位對照見下面 Envelope）：
 
 ```
 ① R300 → micro:bit    {"v":1,"id":144,"t":"req","op":"hello","p":{"fw":"1.0.0"},"ck":86}
@@ -11,7 +11,7 @@
    → R300 log: hello ack: ext=0.1.0 -> handshake ok on attempt 17 (23ms, fw=1.0.0); starting the live check
 ```
 
-第 ② 段個 `ext` 係關鍵：**佢載住一個只有 micro:bit 自己知、R300 估唔到嘅值**。R300 讀得到，就一次過證明「request 真係到咗」**加**「對面真係答得出」—— 唔係淨係電線通。（舊版要靠額外一段 `diag_ack` 才做到呢件事，而家 handshake 自己就帶住。）
+第 ② 段個 `ext`（v2 改名 `ex`）係關鍵：**佢載住一個只有 micro:bit 自己知、R300 估唔到嘅值**。R300 讀得到，就一次過證明「request 真係到咗」**加**「對面真係答得出」—— 唔係淨係電線通。（舊版要靠額外一段 `diag_ack` 才做到呢件事，而家 handshake 自己就帶住。）
 
 ✅ **兩邊一齊上機驗證過**：handshake 成功、`ext=0.1.0` 讀到、`live` **11/11 成功**、rtt 全部 14ms、間隔 510ms、零 LOST。詳見下面「實測紀錄」。
 
@@ -81,21 +81,22 @@ micro:bit (P1 RX) ←────────── R300 (GPIO10 TX, UART port=0
               共用 UART, 115200 baud, 8N1
 ```
 
-每行係一個完整 JSON object 加一個 `\n`，**只准 ASCII**，唔准有空白，每行最多 **127 bytes**（R300 個 line buffer 係 `char buf[128]`，超長嘅行會成行靜靜哋丟棄，冇 log、冇 ack）。
+每行係一個完整 JSON object 加一個 `\n`，**只准 ASCII**，唔准有空白，每行最多 **253 bytes**（R300 個 line buffer 係 `char buf[254]`，超長嘅行會成行靜靜哋丟棄，冇 log、冇 ack）。
 
 📖 **完整合約喺 [`protocol.md`](protocol.md)，衝突以嗰份為準**；下面只係摘要。
 
 ### Envelope
 
 ```
-{"v":1,"id":128,"t":"req","op":"hello","p":{"fw":"1.0.0"},"ck":88}
+{"v":2,"s":"r300","id":0,"t":"r","op":"hello","p":{"fw":"1.0.0"},"ck":126}
 ```
 
 | 欄位 | 意思 |
 |---|---|
-| `v` | Protocol 版本（而家 `1`）。**只喺 wire format 有 breaking change 先變**，唔係 firmware 版本 |
-| `id` | 關聯 ID。micro:bit 用 **0–127**、R300 用 **128–255**；`ack`／`fin` 原封 echo 返 `req` 嗰個 |
-| `t` | 邊一段：`req` / `ack` / `fin` |
+| `v` | Protocol 版本（而家 `2`）。**淨係 handshake 嘅行（`hello` 三行／badver 回覆）先帶**，其他行一律冇；**只喺 wire format 有 breaking change 先變**，唔係 firmware 版本 |
+| `s` | Sender tag：`r300` 或 `mb`。收方**最優先**丟棄自己 tag 嘅行（防 RX 浮空時聽到自己 echo —— 見下面「點解要 envelope」） |
+| `id` | 關聯 ID。兩邊生成都係 **0–99**（解析器照收 0–255）；回覆原封 echo 返發起方嗰個 |
+| `t` | 邊一段：`r`（request）/ `a`（ack）/ `f`（fin） |
 | `op` | 種類（見下） |
 | `p` | Payload，冇內容都要寫 `{}` |
 | `ck` | 校驗碼，**一定係最後一個欄位** |
@@ -112,20 +113,20 @@ micro:bit (P1 RX) ←────────── R300 (GPIO10 TX, UART port=0
 ### 三段同 `op`
 
 ```
-發起方 ──req──→ 對方
-發起方 ←──ack── 對方      對方收到 req 之後回
-發起方 ──fin──→ 對方      發起方收到「最終」ack 之後回（`p` = `{"rtt":N}`）
+發起方 ──r──→ 對方
+發起方 ←──a── 對方      對方收到 r 之後回
+發起方 ──f──→ 對方      發起方收到「最終」a 之後回（`p` = `{"rt":N}`）
 ```
 
-- **邊個發 `req`，邊個負責發 `fin`**；🔴 **任何人都唔准回覆 `ack`／`fin`**（會 ping-pong 到永遠）。
-- 錯誤碼：`badck`（**✅ 用同一個 `id` 重試**）、`badver`、`noop`、`badarg`（三個都 ❌ 唔重試）。
+- **邊個發 `r`，邊個負責發 `f`**；🔴 **任何人都唔准回覆 `a`／`f`**（會 ping-pong 到永遠）。
+- 錯誤碼：`badck`（**✅ 用同一個 `id` 重試**）、`badver`（**handshake 收到用 1 秒慢拍重試**，唔再即死）、`noop`、`badarg`（呢兩個 ❌ 唔重試）。
 - **去重**：收方記住上一個處理過嘅 `(id, op)` 同當時回嘅 ack 原文，撞正就重播、唔重新執行 —— 因為 ack 途中爛咗，對方會用同一個 `id` 重送，唔去重就會執行兩次。
 
 | `op` | 方向 | 狀態 |
 |---|---|---|
-| `hello` | R300 → micro:bit | ✅ 兩邊都實作。R300 每 500ms 發到有 ack 為止；micro:bit 回 `{"st":"ok","ext":"0.1.0"}` |
+| `hello` | R300 → micro:bit | ✅ 兩邊都實作。R300 每 500ms 發到有 ack 為止；micro:bit 回 `{"st":"ok","ex":"0.1.0"}` |
 | `live` | R300 → micro:bit | ✅ 兩邊都實作。handshake 成功之後才開始，micro:bit 回 `{"st":"ok"}` |
-| `vol_done` | R300 → micro:bit | ✅ 兩邊都實作。R300 確認音量真係落咗，值喺 `p.vol` |
+| `vol_done` | R300 → micro:bit | ✅ 兩邊都實作。R300 確認音量真係落咗，值喺 `p.vl` |
 | `mcp_done` | R300 → micro:bit | ✅ 兩邊都實作。R300 確認段舞註冊咗，帶 `name`／`steps`／`drop`。⚠️ **R300 只發一次、唔重試**（音量點都落咗、條 link 生唔生存係 `live` 話事），所以 micro:bit 收唔到就係永久失去嗰次嘅兩個數 |
 | `emo_set` | micro:bit → R300 | ✅ 兩邊都實作（`r300.emoji()`）。monitor 眼睛板嘅面 |
 | `leg_set` | micro:bit → R300 | ✅ 兩邊都實作（`r300.motor()`）。車輪 |
@@ -142,22 +143,22 @@ v0 係裸 JSON（`{"MB_cmd":"test","checksum":192}`）加一個內容 hash 做 c
 2. **冇 session 邊界**。reboot 之後唔知對面係邊個 session → v1 用 R300 收到 `hello` 個 ack 嚟清空去重記錄。
 3. **冇空間講「我唔識」**。v0 撞到唔識嘅 `cmd` 只可以靜靜哋丟 → v1 有 `noop`／`badarg`／`badver`，而且 `v` 唔夾會明講（仲有一個例外處理，見 `protocol.md` 第 7 節 #3，因為對方回 `badver` 嘅時候用緊佢自己個 `v`）。
 
-另外，v0 嗰個 `diag_ack` 想證明「reply 真係返到 micro:bit」，v1 用一個更便宜嘅等價物：**`hello` 個 ack 帶住 micro:bit 自己嘅 `ext`**，R300 讀到就證明兩件事同時成立。⚠️ 加 ack 嘅時候要留意：只係 echo 返 R300 送咗嘅嘢嘅 ack，量度到嘅係電線，唔係對面。
+另外，v0 嗰個 `diag_ack` 想證明「reply 真係返到 micro:bit」，v1 用一個更便宜嘅等價物：**`hello` 個 ack 帶住 micro:bit 自己嘅 `ex`**（v1 嗰代叫 `ext`），R300 讀到就證明兩件事同時成立。⚠️ 加 ack 嘅時候要留意：只係 echo 返 R300 送咗嘅嘢嘅 ack，量度到嘅係電線，唔係對面。
 
 ### 🔴 一定要加大 serial buffer（MakeCode 預設得 20 bytes）
 
 `connect()` 入面喺 `serial.redirect()` 之後即刻做咗兩句，**唔可以刪**：
 
 ```ts
-serial.setRxBufferSize(128)
-serial.setTxBufferSize(128)
+serial.setRxBufferSize(254)
+serial.setTxBufferSize(254)
 ```
 
-**點解**：MakeCode 個 serial RX/TX buffer **預設各得 20 bytes**，但呢條線上面最短嘅協議行已經超過 50 bytes——最短嘅 ack `{"v":1,"id":128,"t":"ack","op":"live","p":{"st":"ok","sid":12345},"ck":187}` 就係 **75 bytes**（`\n` 唔計），最長嗰條（`hello` ack 帶 23 字 `ext`、`id` 127）去度 **96 bytes**。20 bytes 裝唔落，個 ring buffer 喺 `\n` 到達之前就已經捲咗一轉——`serial.readLine()` 攞返嚟嘅係截斷咗嘅尾段，連 `"t"` 呢個 key 本身都已經俾沖走，所以 `handleLine()` 永遠收唔到一條完整嘅行。
+**點解**：MakeCode 個 serial RX/TX buffer **預設各得 20 bytes**，但呢條線上面最短嘅協議行已經超過 50 bytes——最短嘅 ack `{"s":"mb","id":0,"t":"a","op":"live","p":{"st":"ok","id":42},"ck":85}` 就係 **69 bytes**（`\n` 唔計），最長嗰條（`hello` ack 帶 23 字 `ex`、`id` 99）去度 **101 bytes**。20 bytes 裝唔落，個 ring buffer 喺 `\n` 到達之前就已經捲咗一轉——`serial.readLine()` 攞返嚟嘅係截斷咗嘅尾段，連 `"t"` 呢個 key 本身都已經俾沖走，所以 `handleLine()` 永遠收唔到一條完整嘅行。
 
 ⚠️ **佢個失敗症狀係「完全冧聲」**——唔係亂碼、唔係 checksum 唔啱、`onDataReceived` 睇落好似完全冇 fire 過。喺 R300 個 log 度睇落，同「實體回程線 `P1 ← GPIO10` 根本冇駁」**一模一樣，分唔到**。
 
-揀 128 係因為 R300 嗰邊 `MicrobitLink` 個 RX 行上限同樣係 128 bytes（合約上限 127）。個參數型別係 `uint8`（上限 255），但加大過 128 冇意義，因為 R300 一樣頂唔住更長嘅行。
+揀 254 係因為 R300 嗰邊 `MicrobitLink` 個 RX 行上限同樣係 254 bytes（合約上限 253）。亦係 MakeCode 文檔寫嘅上限（256 會 error），再細就裝唔落 `hello` 個長 ack。
 
 ## `r300.ts` 提供咩 Block？
 
@@ -201,7 +202,7 @@ serial.setTxBufferSize(128)
 |---|---|
 | `r300.liveCount` | **本 session** 內 R300 答過幾多次 `live`。**> 0 = 今個 session 握手真係完成、條 link 通咗。** R300 收到 `hello` 嘅 ack 之後先開始 `live`，所以見到 `hello` 只代表握手**開始**咗，見到 `live` 才代表**完成**。⚠️ 每次新 session 會**歸零**——R300 每次 reboot 都會重新握手，所以呢個數一定要「今次 session 由 0 爬返上 > 0」，唔可以當佢係一個由頭到尾都唔跌嘅累計數 |
 | `r300.sessionEpoch` | **R300 開過幾多次 handshake**（由 0 開始）。`test.ts` 嘅自動掃描就係 key 喺呢個數：**每個 session 掃一次**。⚠️ 佢係「handshake 次數」而唔係「session 次數」—— 如果 handshake 期內有 ack 掉咗而 R300 重發 `hello`，就會 +多過 1。對個閘冇影響（只係比 `!=`），但唔好當佢係準確嘅 session 計數 |
-| `r300.SESSION_ID` | 呢次開機隨機抽嘅 id（1..65535）。只會出現喺 `live` ack 嘅 `sid` 欄位，用途係等 R300 知道 micro:bit 自己 reset 咗（protocol.md 7.2）。學生寫嘢唔使理佢 |
+| `r300.SESSION_ID` | 呢次開機隨機抽嘅 id（1..99；約 1% 撞，見 protocol.md 7.2）。只會出現喺 `live` ack payload 嘅 `id` 欄位，用途係等 R300 知道 micro:bit 自己 reset 咗（protocol.md 7.2）。學生寫嘢唔使理佢 |
 
 ⚠️ **點解要分 session，唔係「上電做一次」就算**：R300 每次 reboot 都會重新握手（**包括每次開 monitor —— 一開 port 就 reset 佢**），而 micro:bit 係唔會跟住 reset 嘅。任何「只做一次」嘅嘢如果認「上電」，就會喺 R300 之後每一次 reboot 面前坐喺度唔做嘢——一個真嘅 regression 就係咁靜靜哋過咗。
 
@@ -250,7 +251,7 @@ input.onButtonPressed(Button.A, function () {
 ```
 microbit_R300/                    ← repo root 本身就係 MakeCode extension
 ├── pxt.json                      ← extension manifest（dependencies: core / radio / microphone）
-├── protocol.md                   ← 📖 v1 wire format 合約（**唯一真相來源**）
+├── protocol.md                   ← 📖 v2 wire format 合約（**唯一真相來源**）
 ├── protocol.ts                   ← 協議層：ck 驗證、envelope 分派、砌回覆
 ├── r300.ts                       ← ⭐ library：內部 `r300` namespace（hidden）+ 學生 block namespaces；開機自動 connect
 ├── test.ts                       ← 本機測試（`testFiles`，唔會跟去學生 project）
@@ -371,13 +372,13 @@ screen /dev/cu.usbmodem1101 115200
 ```bash
 mpremote connect /dev/cu.usbmodem1102 repl
 ```
-呢個模式冇 R300 都可以直接睇到 micro:bit 自己 print 緊乜。⚠️ **但 v1 嘅 micro:bit 側一句都唔會 print**（協議層冇 log，而且冇 console 可以睇）——所以呢個模式現在嘅用途只剩「確認 redirect 冇發生」同埋將來加 debug log 嘅時候用。要睇它收咗／回咗乜，唯一嘅地方係 **R300 那邊**（見情況一）。
+呢個模式冇 R300 都可以直接睇到 micro:bit 自己 print 緊乜。⚠️ **但 micro:bit 側一句都唔會 print**（協議層冇 log，而且冇 console 可以睇）——所以呢個模式現在嘅用途只剩「確認 redirect 冇發生」同埋將來加 debug log 嘅時候用。要睇它收咗／回咗乜，唯一嘅地方係 **R300 那邊**（見情況一）。
 
 ⚠️ **兩部裝置都會顯示做 `/dev/cu.usbmodemXXXX`，port number 拔插之後可能會變** —— 千祈唔好用 `mpremote connect auto`，多過一個裝置嘅時候佢會揀錯。用 `mpremote connect list` 先查實邊個 port 對應邊部裝置（睇 USB descriptor 嗰欄），再用明確 port 連接。
 
 ## 實測紀錄（2026-09-11，micro:bit + R300 兩邊一齊燒）
 
-手動驗證方式：燒好兩邊之後，開 R300 個 `idf_monitor`，睇 R300 嗰邊出咩：
+手動驗證方式：燒好兩邊之後，開 R300 個 `idf_monitor`，睇 R300 嗰邊出咩（以下係 2026-09-11 **v1** 原文）：
 
 ```
 I (14803) MicrobitLink: port=0 rx start: flushed 0 stale bytes
@@ -403,7 +404,7 @@ I (23433) MicrobitLink: port=0 -> {"v":1,"id":128,"t":"fin","op":"live","p":{"rt
 | ⚠️ 第一次應機要 8–11 秒 | 呢個係**第二個**窗口，同上面「R300 未 ready」唔同：R300 已經 `rx start`（開機 1 14.8s、開機 2 10.7s）而且開始 probe，但 micro:bit 一聲都唔應 —— 開機 1 靜咗 **8.1 秒**（probe 到 attempt 17）、開機 2 **10.9 秒**（attempt 30）。期間 RX 收到 `@%`、`A���`、`k":90}`、`},"ck":98}` —— 後兩條係 **R300 自己嗰句嘅碎片**（`"ck":90` 就係 id 157 個 probe），即係對面冇 drive P0 嗰陣 TX 串咗去 RX。**原因未證實**，最合理嘅講法係 micro:bit 嗰邊仲喺度完成 DAPLink 燒錄／重新掛載，未行到 `connect()`。想證實就試：**燒完 micro:bit、等十幾秒、再 reboot R300**，睇第一句 probe 係咪即刻有人應 |
 | ✅ 雜訊冇造成假狀態 | 上面啲碎片全部過唔到 `ck`／`v` 檢查所以被丟，而 `live` 只當「**通過 ck** 嘅訊息」係交通，所以冇觸發假 `ONLINE` 或者假 skip。（開機 2 `rx start` 仲報 `flushed 1022 stale bytes`——係 R300 自己 RX task 起之前囤低嘅線噪，`uart_flush_input()` 清走咗，冇污染之後嘅判斷。） |
 
-> 順帶，呢次 capture 也獨立驗證了 `ck` 算法：R300 收到嘅 probe `id 144` 帶 `ck:86`、ack 帶 `ck:96`，同 `protocol.md` 第 11 節自己算出嚟嘅一致（`id 144` 跟 `id 128` 差 2，所以 ack 是 98 − 2 = 96）。
+> 順帶，呢次 capture 也獨立驗證了 `ck` 算法：probe 同 ack 嘅 `ck` 同 `protocol.md` §11 自己算出嚟嘅完全一致（v1 同 v2 兩代都驗過）。
 
 ### ⚠️ 未解釋：兩次都要 8–15 秒先連到
 
@@ -427,7 +428,7 @@ I (23433) MicrobitLink: port=0 -> {"v":1,"id":128,"t":"fin","op":"live","p":{"rt
 
 ### 反方向：R300 發 `hello`，但 micro:bit 唔答
 
-症狀：R300 log 只見 `-> {"v":1,"id":N,"t":"req","op":"hello"...}` 重複出現，**永遠冇 `<- ..."op":"hello"`**，而且每 30 秒出一次 `still no hello ack`。兩個成因，症狀一模一樣：
+症狀：R300 log 只見 `-> {"v":2,"s":"r300","id":N,"t":"r","op":"hello"...}` 重複出現，**永遠冇 `<- ..."op":"hello"`**，而且每 30 秒出一次 `still no hello ack`。兩個成因，症狀一模一樣：
 
 1. **Serial buffer 冇加大**（見上面「一定要加大 serial buffer」）——最常見，而且純軟件問題
 2. **實體回程線 `P1 ← GPIO10` 冇駁 / 駁錯**——記住兩邊要**交叉**：`P0 → GPIO21`、`P1 ← GPIO10`，仲要共地

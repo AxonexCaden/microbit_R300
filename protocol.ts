@@ -1,9 +1,12 @@
-// R300 UART link, protocol v1 (protocol.md). No //% annotations here: nothing in this file is a block.
+// R300 UART link, protocol v2 (protocol.md). No //% annotations here: nothing in this file is a block.
 namespace r300 {
-    export const PROTOCOL_VERSION = 1
-    // R300's line buffer is 128 bytes including the terminator.
-    export const MAX_LINE_BYTES = 127
-    // What R300 logs as `ext`. Keep in step with pxt.json's "version", and keep
+    export const PROTOCOL_VERSION = 2
+    // This side's sender tag. A line that comes back carrying it is our own transmission,
+    // echoed by a floating wire, and is dropped before anything else looks at it.
+    export const SELF_TAG = "mb"
+    // R300's line buffer is 254 bytes including the terminator (the MakeCode maximum).
+    export const MAX_LINE_BYTES = 253
+    // What R300 logs as `ex`. Keep in step with pxt.json's "version", and keep
     // it inside 23 chars ([A-Za-z0-9._+-]) -- R300 truncates past that and the
     // test vectors in protocol.md assume it.
     export const EXT_VERSION = "0.1.0"
@@ -20,8 +23,9 @@ namespace r300 {
     // R300's dedupe record holding the OLD session's last request — and the new session's
     // first request, which starts again at id 0, could be answered from that cached ack
     // instead of running. Random rather than a counter because there is nowhere persistent to
-    // keep one, and it only has to differ from the previous boot.
-    export const SESSION_ID = Math.randomRange(1, 65535)
+    // keep one: it only has to differ from the previous boot, and 1-99 keeps the ack short.
+    // The ~1% chance of two boots drawing the same number is the accepted cost of the range.
+    export const SESSION_ID = Math.randomRange(1, 99)
 
     // Which session the two boards are in. R300's two phases are mutually exclusive — it sends
     // `hello` until the handshake lands, then only `live` — so a hello arriving after we have
@@ -93,16 +97,17 @@ namespace r300 {
         return got == (checksum256(line, at) + 125) % 256
     }
 
-    // One envelope line without "\n"; "" if it would not fit R300's buffer.
-    export function buildLine(t: string, id: number, op: string, pJson: string): string {
-        const body = "{\"v\":" + PROTOCOL_VERSION + ",\"id\":" + id + ",\"t\":\"" + t +
-            "\",\"op\":\"" + op + "\",\"p\":" + pJson + "}"
+    // One envelope line without "\n"; "" if it would not fit R300's buffer. withV is set
+    // only by the handshake's two replies -- v does not ride on any other line.
+    export function buildLine(t: string, id: number, op: string, pJson: string, withV: boolean = false): string {
+        const body = (withV ? "{\"v\":" + PROTOCOL_VERSION + "," : "{") + "\"s\":\"" + SELF_TAG +
+            "\",\"id\":" + id + ",\"t\":\"" + t + "\",\"op\":\"" + op + "\",\"p\":" + pJson + "}"
         const line = body.substr(0, body.length - 1) + ",\"ck\":" + checksum256(body, body.length) + "}"
         return line.length <= MAX_LINE_BYTES ? line : ""
     }
 
-    // op is echoed back into JSON, so it must not need escaping.
-    function isToken(s: string): boolean {
+    // op and tool names are echoed back into JSON, so neither may need escaping.
+    export function isToken(s: string): boolean {
         if (s.length == 0 || s.length > 16) return false
         for (let i = 0; i < s.length; i++) {
             const c = s.charCodeAt(i)
@@ -124,47 +129,51 @@ namespace r300 {
             return ""
         }
         if (msg === undefined || msg === null) return ""
+        // Our own line, echoed back by a floating wire: never answer it.
+        if (msg["s"] === SELF_TAG) return ""
         const t = msg["t"]
         const id = msg["id"]
         const op = msg["op"]
         const idOk = typeof id == "number" && id >= 0 && id <= 255 && id == Math.floor(id)
-        const canReply = t === "req" && idOk && typeof op == "string" && isToken(op)
+        const canReply = t === "r" && idOk && typeof op == "string" && isToken(op)
 
         // No ,"ck": marker at all -> not a line this protocol produced (v0 noise,
         // truncation). §7 #2 says drop it, and badck would be a retry hint to a
         // sender that does not understand this envelope anyway.
         if (lastIndexOf(line, ",\"ck\":") < 0) return ""
-        if (!verifyCk(line)) return canReply ? buildLine("ack", id, op, "{\"st\":\"err\",\"e\":\"badck\"}") : ""
-        if (msg["v"] !== PROTOCOL_VERSION) {
+        if (!verifyCk(line)) return canReply ? buildLine("a", id, op, "{\"st\":\"err\",\"e\":\"badck\"}") : ""
+        // v rides only on the handshake's lines, so a line without it is never a mismatch.
+        const v = msg["v"]
+        if (v !== undefined && v !== PROTOCOL_VERSION) {
             // protocol.md 7 #3: a peer that disagrees about `v` answers with a badver ack built
             // on ITS OWN version, so that reply fails the very check we are standing in. Without
             // the exception below, a sender sits out its whole retry budget and reports "timeout"
             // for what is really a version mismatch — the one failure it cannot resend its way out
             // of. `ck` is still enforced above, so a forged line cannot get in through this door.
             const bp = msg["p"]
-            if (t == "ack" && idOk && typeof op == "string" &&
+            if (t == "a" && idOk && typeof op == "string" &&
                 bp !== undefined && bp !== null && bp["e"] == "badver") onReply(id, op, bp)
-            return canReply ? buildLine("ack", id, op, "{\"st\":\"err\",\"e\":\"badver\"}") : ""
+            return canReply ? buildLine("a", id, op, "{\"st\":\"err\",\"e\":\"badver\"}", true) : ""
         }
         // Valid ack/fin land here too: answering either would ping-pong forever (§6). An ack
         // is also the one thing a sender waiting on this id wants to hear about.
         if (!canReply) {
-            if (t == "ack" && idOk && typeof op == "string") onReply(id, op, msg["p"])
+            if (t == "a" && idOk && typeof op == "string") onReply(id, op, msg["p"])
             return ""
         }
         if (op == "live") {
             liveCount++
-            // `sid` is what lets R300 notice that this micro:bit is a different run than the
-            // one it was talking to. See SESSION_ID.
-            return buildLine("ack", id, op, "{\"st\":\"ok\",\"sid\":" + SESSION_ID + "}")
+            // The payload's `id` is what lets R300 notice that this micro:bit is a different
+            // run than the one it was talking to. See SESSION_ID.
+            return buildLine("a", id, op, "{\"st\":\"ok\",\"id\":" + SESSION_ID + "}")
         }
         // R300 raises this itself once the volume has actually landed (protocol.md 9.6).
         // Nothing to do but confirm it: answering "noop" would make R300 log the whole
         // two-stage path as failed even though the volume was set.
         if (op == "vol_done") {
             const vp = msg["p"]
-            if (vp !== undefined && vp !== null && typeof vp["vol"] == "number") lastVolume = vp["vol"]
-            return buildLine("ack", id, op, "{\"st\":\"ok\"}")
+            if (vp !== undefined && vp !== null && typeof vp["vl"] == "number") lastVolume = vp["vl"]
+            return buildLine("a", id, op, "{\"st\":\"ok\"}")
         }
         if (op == "hello") {
             // See ackedHello. A retransmission cannot reach this branch: R300 retries only until
@@ -174,7 +183,7 @@ namespace r300 {
             liveCount = 0
             const p = msg["p"]
             if (p !== undefined && p !== null && typeof p["fw"] == "string") peerFw = p["fw"]
-            return buildLine("ack", id, op, "{\"st\":\"ok\",\"ext\":\"" + EXT_VERSION + "\"}")
+            return buildLine("a", id, op, "{\"st\":\"ok\",\"ex\":\"" + EXT_VERSION + "\"}", true)
         }
         // R300's SECOND reply to a recording (protocol.md 9.7): the mcp_take ack already said
         // "taken", this one says the tool is now live and how big it turned out to be. R300
@@ -189,8 +198,8 @@ namespace r300 {
                 lastTakeSteps = p["steps"]
                 lastTakeDrop = p["drop"]
             }
-            return buildLine("ack", id, op, "{\"st\":\"ok\"}")
+            return buildLine("a", id, op, "{\"st\":\"ok\"}")
         }
-        return buildLine("ack", id, op, "{\"st\":\"err\",\"e\":\"noop\"}")
+        return buildLine("a", id, op, "{\"st\":\"err\",\"e\":\"noop\"}")
     }
 }

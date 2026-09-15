@@ -108,7 +108,7 @@ function protocolSweep(driveWheels: boolean): void {
     sweepStep("ok", () => r300.volume(0))                 // 7
     sweepStep("ok", () => r300.volume(100))               // 8
     sweepStep("ok", () => r300.send("arm_set", "{\"a1\":180}"))                    // 9 backward limit
-    sweepStep("ok", () => r300.send("leg_set", "{\"rot\":0,\"fwd\":0,\"ms\":3000}"))  // 10 a stop
+    sweepStep("ok", () => r300.send("leg_set", "{\"ro\":0,\"fd\":0,\"ms\":3000}"))  // 10 a stop
 
     // 11-18: out of range must be REFUSED, never clamped — a silent clamp moves the robot
     // somewhere nobody asked for. These go through send() instead of the student-facing
@@ -116,13 +116,13 @@ function protocolSweep(driveWheels: boolean): void {
     // sees them: arm() reads ANY negative hand as "leave it alone", so arm(-1, -1) would send
     // an empty p and answer badarg for the wrong reason.
     sweepStep("badarg", () => r300.volume(101))                                       // 11
-    sweepStep("badarg", () => r300.send("vol_set", "{\"vol\":-1}"))                   // 12
+    sweepStep("badarg", () => r300.send("vol_set", "{\"vl\":-1}"))                   // 12
     sweepStep("badarg", () => r300.send("arm_set", "{\"a1\":181}"))                   // 13
     sweepStep("badarg", () => r300.send("arm_set", "{\"a1\":-1}"))                    // 14 a negative angle
-    sweepStep("badarg", () => r300.send("leg_set", "{\"rot\":101,\"fwd\":0,\"ms\":1000}"))  // 15
-    sweepStep("badarg", () => r300.send("leg_set", "{\"rot\":0,\"fwd\":50,\"ms\":0}"))      // 16 needs a time
+    sweepStep("badarg", () => r300.send("leg_set", "{\"ro\":101,\"fd\":0,\"ms\":1000}"))  // 15
+    sweepStep("badarg", () => r300.send("leg_set", "{\"ro\":0,\"fd\":50,\"ms\":0}"))      // 16 needs a time
     sweepStep("badarg", () => r300.send("arm_set", "{}"))                             // 17 no hand named
-    sweepStep("badarg", () => r300.send("leg_set", "{\"rot\":0,\"fwd\":0}"))          // 18 ms is required
+    sweepStep("badarg", () => r300.send("leg_set", "{\"ro\":0,\"fd\":0}"))          // 18 ms is required
 
     // 19: an op nobody registered must SAY so rather than go silent, so the sender gets an
     // answer instead of burning three 500ms retries on a typo.
