@@ -161,16 +161,28 @@ serial.setTxBufferSize(128)
 
 ## `r300.ts` 提供咩 Block？
 
-**學生喺 Blocks 畫面見到嘅係各 namespace**（`R300 Movement`／`R300 Hands`／`R300 Emotion`／`R300 Speaker`／`R300 MCP`）；下面呢節係內部 `r300.*` API —— 而家全部 `blockHidden`，淨係 TypeScript call 得到。
+**學生喺 Blocks 畫面見到嘅係各 namespace**（`R300 Movement`／`R300 Hands`／`R300 Emotion`／`R300 Speaker`／`R300 MCP`）—— 五個都係同一個橙色 `#E67E22`，namespace 內部再用 `//% groups` 分小組；下面呢節係內部 `r300.*` API —— 而家全部 `blockHidden`，淨係 TypeScript call 得到。
+
+學生 block 一覽：
+
+| Namespace | Blocks（group） |
+|---|---|
+| `R300 Movement` | `move forward for [1] seconds`／`move backward for [1] seconds`（1–3 秒，`Move`）、`move left`／`move right`（無得填，固定 1 秒原地轉，`Turn`）、`stop driving now`（`Stop`）、`drive rot [0] fwd [50] for [1000] ms`（`Custom` —— 保留原本嘅 rot／fwd／ms 全手動控制） |
+| `R300 Hands` | `move left hand [up]`（`Left Hand`）／`move right hand [up]`（`Right Hand`）／`move both hands [up]`（`Both Hands`）、`move hands to [90] and [90] degrees`（`Custom` —— 保留原本嘅 a1／a2 手動控制，-1 = 唔郁嗰隻手） |
+| `R300 Emotion` | `show face [happy]`（`Emotion Control`） |
+| `R300 Speaker` | `set speaker volume to [50]`（`Audio Actions`） |
+| `R300 MCP` | `name recording …`／`start recording moves`／`finish recording as an AI tool`（`MCP Setup`） |
+
+⚠️ 手嘅 dropdown 三隻值係 **up = 180°、down = 90°、back = 0°**（跟 `pxt-axonex_test` 個 `HandPosition`）。**2026-09-15 確認：高舉（high five 個 offer）＝ `up`（180°）**，`test_3.ts` 就係用呢個。`protocol.md` 9.5 用「0 = 指前、90 = 向下、180 = 指後」描述同一條 range——兩套叫法指緊同一批數字，唔好兩邊撈亂。
 
 | Block | TypeScript | 用途 |
 |---|---|---|
 | ~~`connect to R300`~~ | `r300.connect(): void` | **唔再係 block**：extension 開機自動 connect（`r300.ts` 最底嘅 top-level `r300.connect()`，行喺任何 `on start` 之前）。有 guard，重複 call = no-op。Redirect serial 去 P0/P1、加大 buffer、註冊 RX handler 都喺入面 |
 | `show face [happy]` | `r300.emoji(e): string` | 喺 monitor 眼睛板顯示一個表情。19 個名（happy / sad / angry / …），只可以喺下拉揀。學生版本係 `r300_emotion.showFace` |
 
-⚠️ 學生 block（`r300_movement.drive` 等）特登回 `void`：有回傳值嘅 function 喺 Blocks 畫面會變成橢圓形 reporter block，只可以插入其他 block 個窿，**拖唔入 `on start`**。內部 `r300.*` 特登有回傳值（`"ok"`／`"timeout"`…），所以更加唔會出 block。
+⚠️ 學生 block（`r300_movement.moveForward` 等）特登回 `void`：有回傳值嘅 function 喺 Blocks 畫面會變成橢圓形 reporter block，只可以插入其他 block 個窿，**拖唔入 `on start`**。內部 `r300.*` 特登有回傳值（`"ok"`／`"timeout"`…），所以更加唔會出 block。
 
-**其餘 8 個係 TypeScript function —— 特登未有 `//%`，所以 Blocks 畫面唔會見到。** 佢哋係完整嘅 API（唔係「寫嚟試用」），但要用就要喺 MakeCode 切去 JavaScript 打：
+**其餘 8 個係 TypeScript function —— 有 `//%` 但全部 `blockHidden=true`，所以 Blocks 畫面唔會見到。** 佢哋係完整嘅 API（唔係「寫嚟試用」），但要用就要喺 MakeCode 切去 JavaScript 打：
 
 | Function | 做咩 |
 |---|---|
@@ -242,6 +254,8 @@ microbit_R300/                    ← repo root 本身就係 MakeCode extension
 ├── protocol.ts                   ← 協議層：ck 驗證、envelope 分派、砌回覆
 ├── r300.ts                       ← ⭐ library：內部 `r300` namespace（hidden）+ 學生 block namespaces；開機自動 connect
 ├── test.ts                       ← 本機測試（`testFiles`，唔會跟去學生 project）
+├── test_2.ts                     ← bench 測試：copy 去 MakeCode 出 blocks 用（唔喺 pxt.json）
+├── test_3.ts                     ← high_five 錄影示範：只用學生 block（copy 去 MakeCode 出 blocks 用）
 ├── tsconfig.json                 ← pxt build 用（pxt 自動生成）
 ├── package.json                  ← 釘住 pxt-microbit target 版本（+ package-lock.json）
 ├── README.md                     ← 同時係 MakeCode extension 說明頁

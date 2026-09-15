@@ -1,4 +1,4 @@
-//% color="#AA278D" weight=100 block="R300"
+//% color="#E67E22" weight=100 block="R300"
 namespace r300 {
     let connected = false
 
@@ -370,22 +370,87 @@ namespace r300 {
 // ---------------------------------------------------------------------------
 
 //% color="#E67E22" icon="\uf085" block="R300 Movement"
-//% groups="['Drive Control']"
+//% groups="['Move', 'Turn', 'Stop', 'Custom']"
 namespace r300_movement {
+    // Fixed speeds, as percent of full speed. Deliberately not fields: the block a student
+    // picks says WHICH WAY, and how long is the only thing worth tuning in a lesson.
+    const MOVE_SPEED = 80
+    const TURN_SPEED = 80
+    // A turn runs this long. Also fixed: "left" and "right" are one obvious amount of turn
+    // each, and the motor window's 3000 ms ceiling is a full spin, not a turn.
+    const TURN_MS = 1000
+
     /**
-     * Drive the wheels for ms milliseconds and WAIT for the move to finish before the next
-     * block runs. Without the wait the next command lands mid-move and overwrites it, so a
-     * list of drives would only ever show the last one moving. rot / fwd are -100..100 percent
-     * of full speed, and both 0 is a stop. A stop from another event handler still stops the
-     * wheels mid-move, because every handler runs in its own fiber. The wire record of what
-     * R300 did with it lives in R300's console, not here.
+     * Drive forward, then WAIT for the move to finish before the next block runs. Without the
+     * wait the next command lands mid-move and overwrites it, so a list of moves would only
+     * ever show the last one moving. A stop from another event handler still stops the wheels
+     * mid-move, because every handler runs in its own fiber.
+     */
+    //% blockId=r300_movement_forward block="move forward for %seconds seconds"
+    //% seconds.min=1 seconds.max=3 seconds.defl=1
+    //% weight=90
+    //% group="Move"
+    export function moveForward(seconds: number): void {
+        driveStraight(MOVE_SPEED, seconds)
+    }
+
+    /**
+     * Drive backward for `seconds`. Same wait as moveForward().
+     */
+    //% blockId=r300_movement_backward block="move backward for %seconds seconds"
+    //% seconds.min=1 seconds.max=3 seconds.defl=1
+    //% weight=89
+    //% group="Move"
+    export function moveBackward(seconds: number): void {
+        driveStraight(-MOVE_SPEED, seconds)
+    }
+
+    /**
+     * Turn left on the spot: the wheels counter-rotate for a second, then stop. No field —
+     * how far a turn actually gets you is a property of the robot and the floor, not
+     * something a student can usefully guess at.
+     */
+    //% blockId=r300_movement_left block="move left"
+    //% weight=88
+    //% group="Turn"
+    export function moveLeft(): void {
+        turn(-TURN_SPEED)
+    }
+
+    /**
+     * Turn right on the spot. The mirror of moveLeft().
+     */
+    //% blockId=r300_movement_right block="move right"
+    //% weight=87
+    //% group="Turn"
+    export function moveRight(): void {
+        turn(TURN_SPEED)
+    }
+
+    /**
+     * Stop the wheels NOW. Unlike drive(0, 0, 0), this also interrupts a move that is still in
+     * flight, so it works as an emergency stop even from another button handler.
+     */
+    //% blockId=r300_movement_stop block="stop driving now"
+    //% weight=86
+    //% group="Stop"
+    export function stop(): void {
+        r300.stopNow()
+    }
+
+    /**
+     * Full manual control, for when the four direction blocks cannot say what you mean: rot /
+     * fwd are -100..100 percent of full speed and can BOTH be non-zero at once (a curve), ms is
+     * 0..3000 and says how long the motor board should run. rot and fwd both 0 is a stop.
+     * Like the direction blocks, this waits out the move before the next block runs — a stop
+     * from another handler still cuts it short, because every handler runs in its own fiber.
      */
     //% blockId=r300_movement_drive block="drive rot %rot fwd %fwd for %ms ms"
     //% rot.min=-100 rot.max=100 rot.defl=0
     //% fwd.min=-100 fwd.max=100 fwd.defl=50
     //% ms.min=0 ms.max=3000 ms.defl=1000
-    //% weight=90
-    //% group="Drive Control"
+    //% weight=85
+    //% group="Custom"
     export function drive(rot: number, fwd: number, ms: number): void {
         // Round first, then clamp: the clamp must be the LAST step, or rounding a boundary
         // value could push it back out of range. Keep these bounds in step with the //% values.
@@ -398,30 +463,98 @@ namespace r300_movement {
         basic.pause(ms)
     }
 
-    /**
-     * Stop the wheels NOW. Unlike drive(0, 0, 0), this also interrupts a move that is
-     * still in flight, so it works as an emergency stop even from another button handler.
-     */
-    //% blockId=r300_movement_stop block="stop driving now"
-    //% weight=89
-    //% group="Drive Control"
-    export function stop(): void {
-        r300.stopNow()
+    // Seconds -> the millisecond window R300's motor board takes. Rounded first, then clamped:
+    // the clamp must be the LAST step, or rounding a boundary value could push it back out of
+    // range. Keep the bounds in step with the //% values above. The floor is 1 ms, not 0: a
+    // move with ms = 0 makes R300 answer badarg (0 means "use the board's own default
+    // duration", which is never what was meant).
+    function secondsToMs(seconds: number): number {
+        return r300.clamp(Math.round(seconds * 1000), 1, 3000)
+    }
+
+    // rot = 0: straight line. The sign of `speed` picks the direction.
+    function driveStraight(speed: number, seconds: number): void {
+        const ms = secondsToMs(seconds)
+        r300.motor(0, speed, ms)
+        // The command is only the START of the move: R300 hands `ms` to the motor board and
+        // answers straight away, so hold the student's code still until the move is over.
+        basic.pause(ms)
+    }
+
+    // fwd = 0: spinning in place. The sign of `speed` picks the side.
+    function turn(speed: number): void {
+        r300.motor(speed, 0, TURN_MS)
+        basic.pause(TURN_MS)
     }
 }
 
 //% color="#E67E22" icon="\uf256" block="R300 Hands"
-//% groups="['Hand Control']"
+//% groups="['Left Hand', 'Right Hand', 'Both Hands', 'Custom']"
 namespace r300_hands {
     /**
-     * Move the hands. a1 / a2 are physical degrees 0..180 (0 = forward, 90 = down,
-     * 180 = back). Pass -1 for a hand to leave it alone.
+     * Where a hand can point — the dropdown offers exactly these three.
+     *
+     * The angles follow pxt-axonex_test's HandPosition: up = 180°, down = 90°, back = 0°.
+     * Confirmed 2026-09-15: up (180°) is the RAISED pose, and that is what test_3.ts's high
+     * five offers with. ⚠️ protocol.md 9.5 describes the same wire range in other words
+     * (0 = pointing forward, 90 = down, 180 = back) — two sets of names for the same numbers,
+     * so do not read one back onto the other.
+     */
+    export enum HandPose {
+        //% block="up"
+        Up = 180,
+        //% block="down"
+        Down = 90,
+        //% block="back"
+        Back = 0,
+    }
+
+    /**
+     * Move the LEFT hand only; the right hand stays where it is. arm_set leaves a hand alone
+     * by omitting its key, and -1 is how this side says "not this one" — 0 is a real angle,
+     * so it cannot mean "don't move".
+     */
+    //% blockId=r300_hands_left block="move left hand %pose"
+    //% weight=90
+    //% group="Left Hand"
+    export function leftHand(pose: HandPose): void {
+        // a1 = right hand, so the hand this block means is a2.
+        r300.arm(-1, pose)
+    }
+
+    /**
+     * Move the RIGHT hand only. The mirror of leftHand().
+     */
+    //% blockId=r300_hands_right block="move right hand %pose"
+    //% weight=89
+    //% group="Right Hand"
+    export function rightHand(pose: HandPose): void {
+        r300.arm(pose, -1)
+    }
+
+    /**
+     * Move both hands together. They end up at the same angle — mirroring is R300's job, so
+     * "both up" looks symmetric on the robot.
+     */
+    //% blockId=r300_hands_both block="move both hands %pose"
+    //% weight=88
+    //% group="Both Hands"
+    export function bothHands(pose: HandPose): void {
+        r300.arm(pose, pose)
+    }
+
+    /**
+     * Raw angles for the two hands at once, for when the three dropdown blocks cannot say what
+     * you mean (an asymmetric pose, say): a1 = RIGHT hand, a2 = LEFT hand, physical degrees
+     * 0..180 (0 = pointing forward, 90 = down, 180 = back). Pass -1 for a hand to leave it
+     * alone — the key is then left out of the request, because 0 is a real angle and cannot
+     * mean "don't move".
      */
     //% blockId=r300_hands_move block="move hands to %a1 and %a2 degrees"
     //% a1.min=-1 a1.max=180 a1.defl=90
     //% a2.min=-1 a2.max=180 a2.defl=90
-    //% weight=90
-    //% group="Hand Control"
+    //% weight=85
+    //% group="Custom"
     export function moveHands(a1: number, a2: number): void {
         // -1 (leave the hand alone) is the floor, so clamping can never turn "skip" into a move.
         a1 = r300.clamp(Math.round(a1), -1, 180)
@@ -461,7 +594,7 @@ namespace r300_speaker {
     }
 }
 
-//% color="#8E44AD" icon="\uf0d0" block="R300 MCP"
+//% color="#E67E22" icon="\uf0d0" block="R300 MCP"
 //% groups="['MCP Setup']"
 namespace r300_mcp {
     // The description is what the voice AI reads to decide when to call the tool, and it is

@@ -25,67 +25,79 @@ input.onButtonPressed(Button.B, function () {
  */
 led.toggle(0, 0)
 basic.pause(1000)
-// 1 — wheels: forward.
-r300_movement.drive(0, 80, 1000)
+// 1 — wheels: forward for one second.
+r300_movement.moveForward(1)
 led.toggle(0, 0)
 basic.pause(1000)
-// 2 — wheels: spin right.
-r300_movement.drive(80, 0, 1000)
+// 2 — wheels: turn left (no field — a turn is a fixed one-second spin).
+r300_movement.moveLeft()
 led.toggle(0, 0)
 basic.pause(1000)
-// 3 — wheels: backward.
-r300_movement.drive(0, -80, 1000)
+// 3 — wheels: turn right, the mirror of 2.
+r300_movement.moveRight()
 led.toggle(0, 0)
 basic.pause(1000)
-// 4 — the real stop (the one that also interrupts a move still in flight).
+// 4 — wheels: backward, the other direction drive supports.
+r300_movement.moveBackward(1)
+led.toggle(0, 0)
+basic.pause(1000)
+// 5 — wheels: the real stop (the one that also interrupts a move still in flight).
 r300_movement.stop()
 led.toggle(0, 0)
 basic.pause(1000)
-// 5 — hands: both down.
-r300_hands.moveHands(90, 90)
+// 6 — hands: left hand only, up. The right hand must NOT move.
+r300_hands.leftHand(r300_hands.HandPose.Up)
 led.toggle(0, 0)
 basic.pause(1000)
-// 6 — hands: both forward.
-r300_hands.moveHands(0, 0)
+// 7 — hands: right hand only, down. Same check the other way round.
+r300_hands.rightHand(r300_hands.HandPose.Down)
 led.toggle(0, 0)
 basic.pause(1000)
-// 7 — hands: right hand only (-1 leaves the other hand where it is).
-r300_hands.moveHands(45, -1)
+// 8 — hands: both hands back (the third dropdown value, and the only pose that uses 0°).
+r300_hands.bothHands(r300_hands.HandPose.Back)
 led.toggle(0, 0)
 basic.pause(1000)
-// 8 — speaker: quiet.
+// 9 — speaker: quiet.
 r300_speaker.setVolume(30)
 led.toggle(0, 0)
 basic.pause(1000)
-// 9 — speaker: loud.
+// 10 — speaker: loud.
 r300_speaker.setVolume(80)
 led.toggle(0, 0)
 basic.pause(1000)
-// 10 — face 1.
+// 11 — face 1.
 r300_emotion.showFace(r300.Emoji.Happy)
 led.toggle(0, 0)
 basic.pause(1000)
-// 11 — face 2.
+// 12 — face 2.
 r300_emotion.showFace(r300.Emoji.Surprised)
 led.toggle(0, 0)
 basic.pause(1000)
-// 12 — recording: name the routine...
+// 13 — recording: name the routine...
 r300_mcp.nameRecording("test", "bench test routine")
 led.toggle(0, 0)
 basic.pause(1000)
-// 13 — ...arm the recorder...
+// 14 — ...arm the recorder...
 r300_mcp.startRecording()
 led.toggle(0, 0)
 basic.pause(1000)
-// 14 — ...make a move for it to capture...
-r300_movement.drive(0, 80, 800)
+// 15 — ...make a move for it to capture...
+r300_movement.moveForward(1)
 led.toggle(0, 0)
 basic.pause(1000)
-// 15 — ...one more...
-r300_hands.moveHands(90, 90)
+// 16 — ...one more, on the hands...
+r300_hands.bothHands(r300_hands.HandPose.Up)
 led.toggle(0, 0)
 basic.pause(1000)
-// 16 — ...then publish it as an AI tool.
+// 17 — ...and the raw drive block, the only one that can curve (rot and fwd both set)...
+r300_movement.drive(50, 80, 1000)
+led.toggle(0, 0)
+basic.pause(1000)
+// 18 — ...and the raw hands block (-1 leaves the LEFT hand where it is)...
+r300_hands.moveHands(45, -1)
+led.toggle(0, 0)
+basic.pause(1000)
+// 19 — ...then publish it as an AI tool.
 r300_mcp.finishRecording()
 led.toggle(1, 0)
 
