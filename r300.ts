@@ -495,8 +495,8 @@ namespace r300_hands {
      * Where a hand can point — the dropdown offers exactly these three.
      *
      * The angles follow pxt-axonex_test's HandPosition: up = 180°, down = 90°, back = 0°.
-     * Confirmed 2026-09-15: up (180°) is the RAISED pose, and that is what test_3.ts's high
-     * five offers with. ⚠️ protocol.md 9.5 describes the same wire range in other words
+     * Confirmed 2026-09-15: up (180°) is the RAISED pose, and that is what test_mcp_high_five.ts's
+     * high five offers with. ⚠️ protocol.md 9.5 describes the same wire range in other words
      * (0 = pointing forward, 90 = down, 180 = back) — two sets of names for the same numbers,
      * so do not read one back onto the other.
      */
@@ -605,6 +605,12 @@ namespace r300_mcp {
     // got half a clue. The block text says "(max 32 chars)" — keep the two in step.
     const DESC_MAX = 32
 
+    // Every recording is published under this ONE name, so there is no naming rule for a
+    // student to get wrong (1-16 characters of a-z, 0-9, _) and R300's 8-slot tool table never
+    // fills up with the same routine recorded again. Re-recording replaces what the AI can
+    // call, rather than adding another tool beside it.
+    const TOOL_NAME = "mcp_microbit_1"
+
     // Local refusals show the limit that blocked them on the LED. Nothing was sent, so
     // there is no ack and nothing in R300's log to find.
     function refuse(limit: number): void {
@@ -614,22 +620,22 @@ namespace r300_mcp {
     }
 
     /**
-     * Name the routine about to be recorded and say what it does. Call it BEFORE
-     * startRecording(). The name must be 1-16 characters of a-z, 0-9 or _ — it becomes
-     * part of the AI's tool name. Calling it again with the same name appends to the
-     * description.
+     * Say what the routine about to be recorded does. Call it BEFORE startRecording().
+     * The routine is always published as "mcp_microbit_1" — the name is fixed, not a choice a
+     * student makes. Calling this again appends to the description, which is how a description
+     * longer than one line gets sent.
      * Keep the description to 32 characters or fewer — a longer one is refused and shows
      * 32 on the LED (nothing is sent to R300).
      */
-    //% blockId=r300_mcp_name block="name recording %name described as %desc (max 32 chars)"
+    //% blockId=r300_mcp_name block="describe this routine as %desc (max 32 chars)"
     //% weight=90
     //% group="MCP Setup"
-    export function nameRecording(name: string, desc: string): void {
+    export function nameRecording(desc: string): void {
         if (desc.length > DESC_MAX) {
             refuse(DESC_MAX)
             return
         }
-        r300.describe(name, desc)
+        r300.describe(TOOL_NAME, desc)
     }
 
     /**

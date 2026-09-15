@@ -171,9 +171,9 @@ serial.setTxBufferSize(128)
 | `R300 Hands` | `move left hand [up]`（`Left Hand`）／`move right hand [up]`（`Right Hand`）／`move both hands [up]`（`Both Hands`）、`move hands to [90] and [90] degrees`（`Custom` —— 保留原本嘅 a1／a2 手動控制，-1 = 唔郁嗰隻手） |
 | `R300 Emotion` | `show face [happy]`（`Emotion Control`） |
 | `R300 Speaker` | `set speaker volume to [50]`（`Audio Actions`） |
-| `R300 MCP` | `name recording …`／`start recording moves`／`finish recording as an AI tool`（`MCP Setup`） |
+| `R300 MCP` | `describe this routine as …`／`start recording moves`／`finish recording as an AI tool`（`MCP Setup`） |
 
-⚠️ 手嘅 dropdown 三隻值係 **up = 180°、down = 90°、back = 0°**（跟 `pxt-axonex_test` 個 `HandPosition`）。**2026-09-15 確認：高舉（high five 個 offer）＝ `up`（180°）**，`test_3.ts` 就係用呢個。`protocol.md` 9.5 用「0 = 指前、90 = 向下、180 = 指後」描述同一條 range——兩套叫法指緊同一批數字，唔好兩邊撈亂。
+⚠️ 手嘅 dropdown 三隻值係 **up = 180°、down = 90°、back = 0°**（跟 `pxt-axonex_test` 個 `HandPosition`）。**2026-09-15 確認：高舉（high five 個 offer）＝ `up`（180°）**，`test_mcp_high_five.ts` 就係用呢個。`protocol.md` 9.5 用「0 = 指前、90 = 向下、180 = 指後」描述同一條 range——兩套叫法指緊同一批數字，唔好兩邊撈亂。
 
 | Block | TypeScript | 用途 |
 |---|---|---|
@@ -255,7 +255,8 @@ microbit_R300/                    ← repo root 本身就係 MakeCode extension
 ├── r300.ts                       ← ⭐ library：內部 `r300` namespace（hidden）+ 學生 block namespaces；開機自動 connect
 ├── test.ts                       ← 本機測試（`testFiles`，唔會跟去學生 project）
 ├── test_2.ts                     ← bench 測試：copy 去 MakeCode 出 blocks 用（唔喺 pxt.json）
-├── test_3.ts                     ← high_five 錄影示範：只用學生 block（copy 去 MakeCode 出 blocks 用）
+├── test_mcp_high_five.ts         ← high_five 錄影示範：只用學生 block（copy 去 MakeCode 出 blocks 用）
+├── test_emotion.ts               ← 表情巡禮示範：撳 A 順序出晒 19 個面，每個停 5 秒 + micro:bit beep 一聲
 ├── tsconfig.json                 ← pxt build 用（pxt 自動生成）
 ├── package.json                  ← 釘住 pxt-microbit target 版本（+ package-lock.json）
 ├── README.md                     ← 同時係 MakeCode extension 說明頁

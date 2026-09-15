@@ -73,8 +73,8 @@ basic.pause(1000)
 r300_emotion.showFace(r300.Emoji.Surprised)
 led.toggle(0, 0)
 basic.pause(1000)
-// 13 — recording: name the routine...
-r300_mcp.nameRecording("test", "bench test routine")
+// 13 — recording: describe the routine...
+r300_mcp.nameRecording("bench test routine")
 led.toggle(0, 0)
 basic.pause(1000)
 // 14 — ...arm the recorder...

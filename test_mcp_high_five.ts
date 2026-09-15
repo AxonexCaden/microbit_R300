@@ -1,4 +1,4 @@
-// test_3.ts — record the high_five tool using the STUDENT-FACING blocks only.
+// test_mcp_high_five.ts — record the high_five routine using the STUDENT-FACING blocks only.
 //
 // Why a separate file: copy this whole file into a MakeCode micro:bit project that has the R300
 // extension added, switch to Blocks, and every call below turns into the same block you would
@@ -16,11 +16,11 @@
 // the handshake needs about ten seconds after R300 reboots, and a command sent before that has
 // nowhere to go.
 input.onButtonPressed(Button.A, function () {
-    // 1. Name the routine and say what it does. The name becomes part of the AI's tool name
-    //    (self.microbit.high_five), so it is 1-16 characters of a-z, 0-9, _ — no spaces, no
-    //    capitals. The description is capped at 32 characters, and a longer one is refused
-    //    rather than truncated.
-    r300_mcp.nameRecording("high_five", "high-fives the user on request")
+    // 1. Say what the routine does. It is always published as mcp_microbit_1 — the name is
+    //    fixed, so there is no naming rule to get wrong — and the description is what the AI
+    //    reads to decide when to call it. 32 characters maximum; a longer one is refused rather
+    //    than truncated.
+    r300_mcp.nameRecording("high-fives the user on request")
 
     // 2. Arm the recorder. Every move R300 ACCEPTS from here on is captured — and still
     //    happens live, so you are watching the routine being built while you perform it.
@@ -40,9 +40,9 @@ input.onButtonPressed(Button.A, function () {
     r300_speaker.setVolume(80)
     basic.pause(700)
 
-    // 4. Stop and publish. R300 registers the tool under the name from step 1, and the voice AI
-    //    can call it by that name from then on. What R300 actually committed — steps taken,
-    //    and steps dropped over its 64-step ceiling — is reported in r300.lastTakeSteps /
+    // 4. Stop and publish. R300 registers the tool as self.microbit.mcp_microbit_1, and the
+    //    voice AI can call it from then on. What R300 actually committed — steps taken, and
+    //    steps dropped over its 64-step ceiling — is reported in r300.lastTakeSteps /
     //    r300.lastTakeDrop, which are JavaScript-side only and have no block yet.
     r300_mcp.finishRecording()
 })
