@@ -1,4 +1,4 @@
-// test_all.ts — bench sweep over EVERY block the R300 extension publishes (23 of them, 37 steps).
+// test_all.ts — bench sweep over EVERY block the R300 extension publishes (25 of them, 39 steps).
 //
 // Copy this whole file into a MakeCode micro:bit project that has the R300 extension added and
 // switch to the Blocks view: every call below is one of the blocks a student can drag out, so
@@ -6,12 +6,13 @@
 // r300.* API and the wire protocol — and is the place to look when a step here fails and you
 // want to see the answer R300 actually gave.
 //
-// ⚠️ Needs the block set r300.ts is being updated to. Steps 1-5, 20, 22, 24, 34, 35 and 36 use
-// blocks that do not exist yet (R300 Status, the speaker read/change pair, the recording
-// counters). Paste it in after that change lands, not before — it will not compile otherwise.
+// To run it: put it in pxt.json's `testFiles` (replacing test.ts — the two together do not fit
+// in one program) and `pxt build`. It must NEVER go in `files`: that list is what ships, and a
+// bench test living there would sweep the robot on every student power-up.
 //
-// When it runs: by itself, on start, but only after the handshake. R300 ignores the link for
-// about ten seconds after it powers up, and everything below the gate needs a live link.
+// When it runs: by itself, on start, but only after the handshake — and exactly ONCE per
+// power-up. R300 ignores the link for about ten seconds after it powers up, and everything below
+// the gate needs a live link. To run it again, press the micro:bit's reset button.
 //
 // How it reports — on the LED matrix, never through serial. While the link is up, serial is
 // redirected to R300 on P0/P1, so anything written there goes to the robot, not to a terminal.
@@ -20,14 +21,15 @@
 //   · the end: tick = clean; otherwise the failure count, then each failing step number,
 //     blanked between them so two numbers cannot be read as one longer number
 //   · A+B at any moment: stop the wheels — this test drives a real robot
-//   · B (tap) afterwards: run the whole thing again
 //
 // SIDE EFFECTS: the recording section leaves a routine on the robot, REPLACING whatever
-// mcp_microbit_1 held before, and the robot is left stopped, at volume 50, face happy.
+// mcp_microbit_1 held before; the conversation steps open a conversation with the AI and then
+// try to close it again; talk-over is left ENABLED (step 27 has the last word on it); and the
+// robot is left stopped, at volume 50, face happy.
 //
-// Not part of the extension: like test_2.ts, this file is not in pxt.json, so it never reaches
-// a student's project. Do not hold A while resetting to run it — that is the USB-serial escape
-// hatch, it skips the serial redirect, and the link is then never up, so step 1 can only fail.
+// Not part of a student's project: it only ever lives in pxt.json's testFiles. Do not hold A
+// while resetting to run it — that is the USB-serial escape hatch, it skips the serial redirect,
+// and the link is then never up, so step 1 can only fail.
 //
 // Step map (the number on the matrix is the check):
 //    1  R300 is connected                 gate — a failure here ends the run
@@ -55,8 +57,8 @@
 //   23  change speaker volume by 100      50 + 100 has to clamp to 100, not run past it
 //   24  speaker volume reads 100
 //   25  set speaker volume to 50          back to a sane level for the recording section
-//   26  allow talking over
-//   27  don't allow talking over
+//   26  don't allow talking over          off first, so the pair is a full round trip
+//   27  allow talking over                leaves talk-over ENABLED
 //   28  describe this routine
 //   29  start recording
 //   30  move both hands up                recorded
@@ -66,7 +68,9 @@
 //   34  moves recorded > 0                R300 reports the take in a SECOND message
 //   35  routine was cut short?            three moves is nowhere near the 64-step ceiling
 //   36  a 64-character description        refused locally — accepted? must go false
-//   37  stop driving now                  park the robot
+//   37  end the AI conversation           deterministic from the closed state
+//   38  start an AI conversation          leaves it OPEN; see the note at the step
+//   39  stop driving now                  park the robot
 
 // ---------------------------------------------------------------------------
 // Steps 6-37 each assert the one thing a bench can see for itself: that R300 took the request.
@@ -79,6 +83,9 @@
 let step = 0
 let fails = 0
 let running = false
+// The sweep runs exactly ONCE per power-up: done is latched on entry and never cleared, so
+// nothing can start a second pass over the same robot without a reset.
+let done = false
 // Every step number that failed, in order, so the summary can walk them back afterwards.
 let failed: number[] = []
 // Only the first pass after a reset sees a micro:bit that has never sent anything; see step 2.
@@ -124,16 +131,16 @@ function waitForVolume(want: number, timeoutMs: number): boolean {
 // the ack, and never retries that message.
 function waitForSteps(timeoutMs: number): boolean {
     const deadline = control.millis() + timeoutMs
-    while (r300_mcp.movesRecorded() <= 0 && control.millis() < deadline) basic.pause(100)
-    return r300_mcp.movesRecorded() > 0
+    while (r300_ai.movesRecorded() <= 0 && control.millis() < deadline) basic.pause(100)
+    return r300_ai.movesRecorded() > 0
 }
 
 function sweep(): void {
-    // A second sweep while this one is running would share the counters and the matrix, and both
-    // runs would lie. Handlers are separate fibres, so B can arrive at any moment — including in
-    // the middle of this function.
-    if (running) return
+    // Once per power-up, and never twice at the same time: a second pass would share the counters
+    // and the matrix, and both runs would lie about which step failed.
+    if (running || done) return
     running = true
+    done = true
     step = 0
     fails = 0
     failed = []
@@ -160,8 +167,8 @@ function sweep(): void {
     // 3,4,5 — the read blocks have to answer before anything has been asked of the robot.
     const volume0 = r300_speaker.volume()
     check(volume0 >= 0 && volume0 <= 100)                    // 3
-    check(r300_mcp.movesRecorded() >= 0 && r300_mcp.movesRecorded() <= 64)   // 4
-    check(!r300_mcp.recordingWasCutShort())                  // 5
+    check(r300_ai.movesRecorded() >= 0 && r300_ai.movesRecorded() <= 64)   // 4
+    check(!r300_ai.recordingWasCutShort())                   // 5
 
     // 6-11 — the six wheel blocks. Every action block waits out its own move before returning,
     //        so this list is also the order you see on the floor.
@@ -221,20 +228,23 @@ function sweep(): void {
     r300_speaker.setVolume(50)                               // 25
     check(r300_status.accepted())
 
-    // 26,27 — the two absolute talk-over states. R300 refuses these with "badarg" whenever it is
-    //         not idle — changing the mode closes the audio channel, which would cut off a reply
-    //         being spoken — so a failure here usually means the robot was talking, not that the
-    //         block is dead. Press it again once it is quiet before believing it.
-    r300_talkover.allowTalkingOver()
-    check(r300_status.accepted())                            // 26
+    // 26,27 — the two absolute talk-over states, exercised OFF then ON: the pair is then a full
+    //         round trip (both directions really change the mode) and it finishes with talk-over
+    //         ENABLED, which is the state a lesson demo wants to leave behind.
+    //         R300 refuses these with "badarg" whenever it is not idle — changing the mode
+    //         closes the audio channel, which would cut off a reply being spoken — so a failure
+    //         here usually means the robot was talking, not that the block is dead. Press it
+    //         again once it is quiet before believing it.
     r300_talkover.stopTalkingOver()
-    check(r300_status.accepted())                            // 27
+    check(r300_status.accepted())                            // 26 off
+    r300_talkover.allowTalkingOver()
+    check(r300_status.accepted())                            // 27 on — and left on
 
     // 28-35 — the recording flow. This is the only part of the extension that leaves something
     //         behind on the robot, and it REPLACES the tool that was there before.
-    r300_mcp.nameRecording("bench sweep: hands and one step")
+    r300_ai.nameRecording("bench sweep: hands and one step")
     check(r300_status.accepted())                            // 28
-    r300_mcp.startRecording()
+    r300_ai.startRecording()
     check(r300_status.accepted())                            // 29
 
     // The moves ARE the take, and they still happen live: you are watching the routine being
@@ -246,22 +256,35 @@ function sweep(): void {
     r300_hands.bothHands(r300_hands.HandPose.Down)
     check(r300_status.accepted())                            // 32
 
-    r300_mcp.finishRecording()
+    r300_ai.finishRecording()
     check(r300_status.accepted())                            // 33
     check(waitForSteps(5000))                                // 34 the mcp_done, not the ack
-    check(!r300_mcp.recordingWasCutShort())                  // 35 three moves, ceiling is 64
+    check(!r300_ai.recordingWasCutShort())                   // 35 three moves, ceiling is 64
 
     // 36 — a description past the 32-character limit is refused HERE, before anything is sent:
     //      the robot never hears about it, the matrix shows 32 (the limit that blocked it), and
     //      the accepted? block has to say no. Repeatable, unlike the busy case.
-    r300_mcp.nameRecording("this description is definitely longer than thirty-two characters")
+    r300_ai.nameRecording("this description is definitely longer than thirty-two characters")
     check(!r300_status.accepted())                           // 36
 
-    // 37 — park it.
-    r300_movement.stop()
+    // 37,38 — the AI conversation pair. Close FIRST: from the closed state the close is
+    //         deterministic (R300 answers ok and changes nothing), while a close issued after a
+    //         start can be REFUSED once the robot has begun speaking its greeting — it will not
+    //         cut off its own reply. So the pair is closed-then-opened, and the sweep leaves the
+    //         conversation open; the courtesy close further down is best effort.
+    r300_ai.stopConversation()
     check(r300_status.accepted())                            // 37
+    r300_ai.startConversation()
+    check(r300_status.accepted())                            // 38
+
+    // 39 — park it.
+    r300_movement.stop()
+    check(r300_status.accepted())                            // 39
     r300_emotion.showFace(r300.Emoji.Happy)
     r300_hands.bothHands(r300_hands.HandPose.Down)
+    // Best effort, and never checked: see the note above. If the robot is still listening, its own
+    // boot button does the same thing — this pair is that button, minus the finger.
+    r300_ai.stopConversation()
 
     // ---- summary ----------------------------------------------------------
     // 0 = every check passed. Otherwise: how many failed, then which ones, blanked between so
@@ -290,13 +313,6 @@ function sweep(): void {
 // ---------------------------------------------------------------------------
 input.onButtonPressed(Button.AB, function () {
     r300_movement.stop()
-})
-
-// Tap B to run it again. On B rather than A, because holding A during a reset is the USB-serial
-// escape hatch: with it held the port is never redirected and the link never comes up, so the
-// gate could only fail. A tap of A is also what the other bench files already use.
-input.onButtonPressed(Button.B, function () {
-    sweep()
 })
 
 // Top level, so it runs once at power-up, before any handler.

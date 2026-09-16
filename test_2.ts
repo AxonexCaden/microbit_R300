@@ -74,11 +74,11 @@ r300_emotion.showFace(r300.Emoji.Surprised)
 led.toggle(0, 0)
 basic.pause(1000)
 // 13 — recording: describe the routine...
-r300_mcp.nameRecording("bench test routine")
+r300_ai.nameRecording("bench test routine")
 led.toggle(0, 0)
 basic.pause(1000)
 // 14 — ...arm the recorder...
-r300_mcp.startRecording()
+r300_ai.startRecording()
 led.toggle(0, 0)
 basic.pause(1000)
 // 15 — ...make a move for it to capture...
@@ -98,6 +98,6 @@ r300_hands.moveHands(45, -1)
 led.toggle(0, 0)
 basic.pause(1000)
 // 19 — ...then publish it as an AI tool.
-r300_mcp.finishRecording()
+r300_ai.finishRecording()
 led.toggle(1, 0)
 

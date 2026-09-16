@@ -695,7 +695,7 @@ namespace r300_speaker {
     }
 }
 
-//% color="#E67E22" icon="\uf130" weight=89 block="R300 Talk Over"
+//% color="#E67E22" icon="\uf130" weight=90 block="R300 Talk Over"
 namespace r300_talkover {
     /**
      * Let the user interrupt R300 by talking while it is speaking: it stops the reply and
@@ -722,7 +722,10 @@ namespace r300_talkover {
     }
 }
 
-//% color="#E67E22" icon="\uf075" weight=90 block="R300 AI"
+// One category for everything that talks to the robot's AI. The conversation pair comes first
+// (that is where a lesson starts) and the recording flow follows it; they were two namespaces —
+// and so two toolbox drawers with confusingly similar names — until they were merged here.
+//% color="#E67E22" icon="\uf0d0" weight=91 block="R300 AI"
 namespace r300_ai {
     /**
      * Start a conversation with the AI — the same thing one press of the robot's boot button
@@ -753,10 +756,8 @@ namespace r300_ai {
     export function stopConversation(): void {
         r300.ai(false)
     }
-}
 
-//% color="#E67E22" icon="\uf0d0" weight=91 block="R300 AI Tools"
-namespace r300_mcp {
+
     // The description is what the voice AI reads to decide when to call the tool, and it is
     // the one field a student types that can run past what one protocol line carries
     // (README.md 9.7 chunks it at 34 characters a call). 32 keeps a chunk under that
@@ -791,7 +792,7 @@ namespace r300_mcp {
      * 32 on the LED (nothing is sent to R300).
      */
     //% blockId=r300_mcp_name block="describe this routine as %desc (max 32 chars)"
-    //% weight=100
+    //% weight=80
     export function nameRecording(desc: string): void {
         if (desc.length > DESC_MAX) {
             refuse(DESC_MAX)
@@ -805,7 +806,7 @@ namespace r300_mcp {
      * still happen live while you perform them.
      */
     //% blockId=r300_mcp_start block="start recording moves"
-    //% weight=90
+    //% weight=70
     export function startRecording(): void {
         r300.takeStart()
     }
@@ -814,7 +815,7 @@ namespace r300_mcp {
      * Stop recording and publish it as a tool the voice AI can call by name.
      */
     //% blockId=r300_mcp_finish block="finish recording as an AI tool"
-    //% weight=80
+    //% weight=60
     export function finishRecording(): void {
         r300.takeFinish()
     }
@@ -827,7 +828,7 @@ namespace r300_mcp {
      * only recorded the first 64, so read this after finishRecording() when it matters.
      */
     //% blockId=r300_mcp_steps block="moves recorded"
-    //% weight=70
+    //% weight=50
     export function movesRecorded(): number {
         // -1 is protocol.ts's "no take has ever been reported", which is not a number a student
         // can do anything with. 0 is the truthful reading: nothing recorded yet.
@@ -844,13 +845,13 @@ namespace r300_mcp {
      * are the two cases that matter, and only the second one is a problem.
      */
     //% blockId=r300_mcp_cut block="routine was cut short?"
-    //% weight=60
+    //% weight=40
     export function recordingWasCutShort(): boolean {
         return r300.lastTakeDrop > 0
     }
 }
 
-//% color="#E67E22" icon="\uf059" weight=88 block="R300 Status"
+//% color="#E67E22" icon="\uf059" weight=89 block="R300 Status"
 namespace r300_status {
     /**
      * Is the link up? True from the moment R300 has handshaked with this micro:bit and answered

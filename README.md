@@ -51,13 +51,13 @@ Seven groups in the toolbox:
 
 | Group | What it does |
 |---|---|
-| **R300 Movement** | Forward or backward for 1–3 seconds, turn left/right on the spot, stop driving now — or the full manual `drive rot fwd for ms` |
-| **R300 Hands** | Either hand, or both, to `up` (180°), `down` (90°) or `back` (0°) — or both angles by hand |
+| **R300 Movement** | Forward or backward for 1–3 seconds, turn left/right on the spot, stop driving now — plus `drive rot fwd for ms` under **More**, the full manual control |
+| **R300 Hands** | Either hand, or both, to `up` (180°), `down` (90°) or `back` (0°) — plus both angles by hand under **More** |
 | **R300 Emotion** | One of 19 faces on the robot's eyes; the face stays until you change it |
-| **R300 Speaker** | Volume, 0–100 |
-| **R300 MCP** | Describe and record a routine so the robot replays it on a voice command (a new recording replaces the old one) |
+| **R300 Speaker** | `set speaker volume to` / `change speaker volume by` / read `speaker volume` — the same set, change, read shape Music gives tempo |
+| **R300 AI** | Talk to the robot's AI: `start` / `end an AI conversation` (what its own boot button does), and describe + record a routine so the robot replays it on a voice command. `moves recorded` and `routine was cut short?` report what the last take captured |
 | **R300 Talk Over** | Allow, or stop, talking over the robot's reply — two absolute states, never a toggle |
-| **R300 AI** | Start or end a conversation with the AI, as the robot's own boot button does — two absolute states, never a toggle |
+| **R300 Status** | `R300 is connected` and `the last command was accepted` — the two values a program can put in a variable or test in an `if` |
 
 Two groups in one program:
 

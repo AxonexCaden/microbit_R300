@@ -20,11 +20,11 @@ input.onButtonPressed(Button.A, function () {
     //    fixed, so there is no naming rule to get wrong — and the description is what the AI
     //    reads to decide when to call it. 32 characters maximum; a longer one is refused rather
     //    than truncated.
-    r300_mcp.nameRecording("high-fives the user on request")
+    r300_ai.nameRecording("high-fives the user on request")
 
     // 2. Arm the recorder. Every move R300 ACCEPTS from here on is captured — and still
     //    happens live, so you are watching the routine being built while you perform it.
-    r300_mcp.startRecording()
+    r300_ai.startRecording()
 
     // 3. Perform the routine. The two hand moves are the part that gets recorded; the face and
     //    the volume are the show around them and are NOT captured (a take has no sink for
@@ -44,5 +44,5 @@ input.onButtonPressed(Button.A, function () {
     //    voice AI can call it from then on. What R300 actually committed — steps taken, and
     //    steps dropped over its 64-step ceiling — is reported in r300.lastTakeSteps /
     //    r300.lastTakeDrop, which are JavaScript-side only and have no block yet.
-    r300_mcp.finishRecording()
+    r300_ai.finishRecording()
 })
