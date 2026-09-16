@@ -345,6 +345,24 @@ namespace r300 {
         return send("arm_set", p + "}")
     }
 
+    /**
+     * Let the user talk over R300 while it is speaking — interrupting the reply — or stop
+     * letting them. An absolute mode, never a toggle: "on" sent twice is still on, so a
+     * replayed request cannot flip it either way.
+     * R300 refuses it with "badarg" whenever it is not idle (changing the mode closes the audio
+     * channel, which would cut off the reply being spoken), and that refusal is cached — but
+     * pressing the block again is a fresh request, because every send() takes a new id. "noop"
+     * means this R300's firmware was built without AEC, not that the link is broken.
+     * "ok" only ever means accepted: the mode is applied on R300's main loop, so a bench reads
+     * its log (`AEC mode -> 1`), never this return value. Nothing here survives a reboot.
+     */
+    //% blockId=r300_aec block="talk over the reply %on"
+    //% blockHidden=true
+    //% weight=91
+    export function aec(on: boolean): string {
+        return send("aec_set", "{\"on\":" + (on ? 1 : 0) + "}")
+    }
+
     // Clamp a number into an inclusive range. Deliberately NOT a block: it exists for the
     // student-facing wrappers below, whose arguments can come from JavaScript or from
     // arithmetic and therefore never met a block field's min/max. R300 refuses out-of-range
@@ -597,6 +615,36 @@ namespace r300_speaker {
     export function setVolume(v: number): void {
         v = r300.clamp(Math.round(v), 0, 100)
         r300.volume(v)
+    }
+}
+
+//% color="#E67E22" icon="\uf130" block="R300 Talk Over"
+//% groups="['Talk Over']"
+namespace r300_talkover {
+    /**
+     * Let the user interrupt R300 by talking while it is speaking: it stops the reply and
+     * listens to them instead. Until this runs, only R300's own wake word can interrupt it.
+     * The mode is absolute (there is deliberately no toggle block, so a replay cannot invert
+     * it) and it does not survive a reboot — put this in "on start" to apply it to every run.
+     * R300 accepts it only while idle, and this block, like every action block, does not show
+     * a refusal: if it was pressed mid-reply, simply press it again once the reply finishes.
+     */
+    //% blockId=r300_talkover_allow block="allow talking over R300's reply"
+    //% weight=90
+    //% group="Talk Over"
+    export function allowTalkingOver(): void {
+        r300.aec(true)
+    }
+
+    /**
+     * Stop letting the user talk over R300: only its wake word ends a reply. The mirror of
+     * allowTalkingOver(), and the state a freshly booted R300 starts in.
+     */
+    //% blockId=r300_talkover_stop block="don't allow talking over R300's reply"
+    //% weight=89
+    //% group="Talk Over"
+    export function stopTalkingOver(): void {
+        r300.aec(false)
     }
 }
 

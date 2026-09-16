@@ -47,7 +47,7 @@ Two things that surprise people:
 
 ## What you can control
 
-Five groups in the toolbox:
+Six groups in the toolbox:
 
 | Group | What it does |
 |---|---|
@@ -56,6 +56,7 @@ Five groups in the toolbox:
 | **R300 Emotion** | One of 19 faces on the robot's eyes; the face stays until you change it |
 | **R300 Speaker** | Volume, 0–100 |
 | **R300 MCP** | Describe and record a routine so the robot replays it on a voice command (a new recording replaces the old one) |
+| **R300 Talk Over** | Allow, or stop, talking over the robot's reply — two absolute states, never a toggle |
 
 Two groups in one program:
 
@@ -75,6 +76,7 @@ These have no blocks — use the **JavaScript** tab:
 | `r300.motor(rot, fwd, ms)` | Wheels directly: −100…100, −100…100, 0…3000 ms |
 | `r300.stopNow()` | Stop now, cancelling any move in flight |
 | `r300.arm(a1, a2)` | Both arm angles, 0–180; pass `-1` to leave one alone |
+| `r300.aec(on)` | Talk-over on/off — absolute; needs a robot built with the feature |
 | `r300.volume(v)` | Volume, 0–100 |
 | `r300.describe(name, desc)` | Name and describe a recording before taking it |
 | `r300.takeStart()` / `r300.takeFinish()` | Start / finish a recording |
@@ -196,6 +198,13 @@ pieces, and the same name appends. Start and finish with
 `{"state":"start"｜"finish"}`. The robot reports the finished tool with
 `{"name":…,"steps":N,"drop":M}` — `drop` counts steps lost past the 64-step
 ceiling.
+
+**9.8 `aec_set`** — `{"on":0｜1}`. Talk-over: `1` lets the user interrupt the
+robot mid-reply; `0` leaves only the wake word. Absolute, never a toggle.
+Accepted only while the robot is idle — otherwise `badarg`, worth retrying once
+the reply finishes (every send takes a new id). `noop` means that robot's
+firmware was built without the feature. Not stored: a reboot returns to the
+default.
 
 ### 10. Timing summary
 
