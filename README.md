@@ -47,7 +47,7 @@ Two things that surprise people:
 
 ## What you can control
 
-Six groups in the toolbox:
+Seven groups in the toolbox:
 
 | Group | What it does |
 |---|---|
@@ -57,6 +57,7 @@ Six groups in the toolbox:
 | **R300 Speaker** | Volume, 0–100 |
 | **R300 MCP** | Describe and record a routine so the robot replays it on a voice command (a new recording replaces the old one) |
 | **R300 Talk Over** | Allow, or stop, talking over the robot's reply — two absolute states, never a toggle |
+| **R300 AI** | Start or end a conversation with the AI, as the robot's own boot button does — two absolute states, never a toggle |
 
 Two groups in one program:
 
@@ -77,6 +78,7 @@ These have no blocks — use the **JavaScript** tab:
 | `r300.stopNow()` | Stop now, cancelling any move in flight |
 | `r300.arm(a1, a2)` | Both arm angles, 0–180; pass `-1` to leave one alone |
 | `r300.aec(on)` | Talk-over on/off — absolute; needs a robot built with the feature |
+| `r300.ai(on)` | Conversation with the AI on/off — absolute; the boot button's other half |
 | `r300.volume(v)` | Volume, 0–100 |
 | `r300.describe(name, desc)` | Name and describe a recording before taking it |
 | `r300.takeStart()` / `r300.takeFinish()` | Start / finish a recording |
@@ -211,6 +213,52 @@ Accepted only while the robot is idle — otherwise `badarg`, worth retrying onc
 the reply finishes (every send takes a new id). `noop` means that robot's
 firmware was built without the feature. Not stored: a reboot returns to the
 default.
+
+**9.9 `ai_set`** — `{"on":0｜1}`. Start or end a conversation with the AI: the
+same thing one press of the robot's boot button does. Absolute, never a toggle —
+`1` says "be in a conversation", `0` says "be out of it".
+
+```
+{"s":"mb","id":93,"t":"r","op":"ai_set","p":{"on":1},"ck":147}
+{"s":"r300","id":93,"t":"a","op":"ai_set","p":{"st":"ok","on":1},"ck":<N>}
+{"s":"r300","id":93,"t":"a","op":"ai_set","p":{"st":"err","e":"badarg"},"ck":<N>}
+```
+
+No `v` on this line, and no second reply after the ack. The ack means
+**accepted**, not applied: an `ok` does not promise the conversation has opened
+or closed yet.
+
+`{"on":1}` from idle opens the connection; `{"on":0}` while listening closes it.
+`{"on":1}` while already connecting, listening or speaking, and `{"on":0}` from
+idle, are both `ok` and change nothing.
+
+`badarg` covers a malformed payload **and** a refusal by state, and a program
+cannot tell the two apart:
+
+- `{"on":0}` **while the robot is speaking** — it will not cut off its own reply.
+  Wait for it to finish, or send it again shortly. This is the one that surprises
+  students: the block is not a stop button.
+- `{"on":0}` while connecting — a connection in progress cannot be cancelled.
+- either direction during start-up, activation, WiFi setup or the audio test.
+- while the robot is in limited-charging mode.
+- `on` is anything other than exactly `0` or `1` — a string, `2`, or missing. It
+  is refused, never clamped.
+
+A refusal is cached against `(id, op)` (7 #4), so a retry needs a **new id** —
+which is what the extension's sender gives every request anyway.
+
+Test vectors, each checked against the rule in (4):
+
+| Request | Answer |
+|---|---|
+| `{"s":"mb","id":93,"t":"r","op":"ai_set","p":{"on":1},"ck":147}` | `ok`, `on:1` |
+| `{"s":"mb","id":94,"t":"r","op":"ai_set","p":{"on":0},"ck":147}` | `ok`, `on:0` |
+| `{"s":"mb","id":95,"t":"r","op":"ai_set","p":{},"ck":9}` | `badarg` — `on` missing |
+| `{"s":"mb","id":96,"t":"r","op":"ai_set","p":{"on":"1"},"ck":218}` | `badarg` — `on` is a string |
+| `{"s":"mb","id":97,"t":"r","op":"ai_set","p":{"on":2},"ck":152}` | `badarg` — not `0`/`1` |
+
+93 and 94 sharing `ck:147` is correct, not a typo: the id rises by 1 while `on`
+falls by 1, and the two cancel.
 
 ### 10. Timing summary
 

@@ -363,6 +363,27 @@ namespace r300 {
         return send("aec_set", "{\"on\":" + (on ? 1 : 0) + "}")
     }
 
+    /**
+     * Be in a conversation with R300's AI, or be out of one — the same thing one press of the
+     * robot's boot button does. An absolute mode, never a toggle: "on" sent twice is still on,
+     * so a repeated request cannot flip it either way.
+     * There is no second reply for this op: "ok" means R300 accepted the request, not that the
+     * conversation has opened or closed yet.
+     * "badarg" is the one answer to plan for, and it covers a malformed payload AND a refusal by
+     * state, which a program cannot tell apart. The state refusals: {"on":0} while R300 is
+     * SPEAKING, which it answers badarg rather than cut off its own reply — the surprise for a
+     * student who expects a stop button; {"on":0} while a connection is still being made, which
+     * cannot be cancelled; and either direction during start-up, activation, WiFi setup, the
+     * audio test or limited charging. Retrying after a refusal needs a fresh id, which every
+     * send() gives it — the refusal itself is cached against the (id, op) pair.
+     */
+    //% blockId=r300_ai block="conversation with the AI %on"
+    //% blockHidden=true
+    //% weight=91
+    export function ai(on: boolean): string {
+        return send("ai_set", "{\"on\":" + (on ? 1 : 0) + "}")
+    }
+
     // Clamp a number into an inclusive range. Deliberately NOT a block: it exists for the
     // student-facing wrappers below, whose arguments can come from JavaScript or from
     // arithmetic and therefore never met a block field's min/max. R300 refuses out-of-range
@@ -645,6 +666,42 @@ namespace r300_talkover {
     //% group="Talk Over"
     export function stopTalkingOver(): void {
         r300.aec(false)
+    }
+}
+
+//% color="#E67E22" icon="\uf075" block="R300 AI"
+//% groups="['AI Connection']"
+namespace r300_ai {
+    /**
+     * Start a conversation with the AI — the same thing one press of the robot's boot button
+     * does, without touching the robot. The connection opens and the robot starts listening.
+     * The state is absolute (there is deliberately no toggle block, so a replay cannot invert
+     * it): running this while R300 is already connecting, listening or speaking is accepted and
+     * changes nothing.
+     * "ok" only means R300 accepted the request, and it can refuse — R300 will not take this
+     * during start-up, activation, WiFi setup, the audio test or limited charging. A refusal is
+     * not shown here: if nothing happened, press it again once R300 has settled.
+     */
+    //% blockId=r300_ai_start block="start an AI conversation"
+    //% weight=90
+    //% group="AI Connection"
+    export function startConversation(): void {
+        r300.ai(true)
+    }
+
+    /**
+     * End the conversation with the AI. The mirror of startConversation() — the connection
+     * closes, and it is accepted even if no conversation was open.
+     *
+     * ⚠️ R300 will NOT cut off its own reply. Asking for this while the robot is SPEAKING is
+     * refused and the reply plays to the end, so press it again once the robot has finished
+     * talking. A connection that is still being made cannot be cancelled either.
+     */
+    //% blockId=r300_ai_stop block="end the AI conversation"
+    //% weight=89
+    //% group="AI Connection"
+    export function stopConversation(): void {
+        r300.ai(false)
     }
 }
 
