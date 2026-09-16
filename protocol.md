@@ -3,6 +3,7 @@
 > 呢份係 `microbit_R300`（micro:bit extension，`r300.ts`／`protocol.ts`）同 `CompanionRobots`（R300 firmware，`aimo-v1-edu-microbit` board：`microbit_command_router.h`／`microbit_link.h`）之間**唯一嘅合約**。兩邊實作有衝突，以呢份為準；要改 wire format，先改呢份再改 code。
 >
 > **狀態**：v2（2026-09-15）。**兩邊都全部實作並上機驗證**（handshake＋`live`＋全部 ops；R300 側 `microbit_command_router.h` 全家、micro:bit 側 `protocol.ts`／`r300.ts`）。修咗 Y103（R300 聽到自己 echo 而假死）同「`handshake refused` 之後死等 reboot」兩單。
+> 🆕 **2026-09-16**：`aec_set`（見 9.8）加入 micro:bit 側（`r300.aec()`＋學生 block `r300_talkover`）。R300 側 code 已有，但 gate 喺 `CONFIG_USE_DEVICE_AEC`（唔係 `y` 就答 `noop`）而且未上機驗證。
 > ⚠️ **v1 × v2 唔准混跑**：兩個 repo 要**一齊 flash**。舊 micro:bit 對 v2 `hello` 會回 `badver`，R300 會**每 1 秒重試直到對面升級**（唔會死等 reboot）。
 > ⚠️ **v2 改咗啲乜**：加 `"s"` sender tag（收方丟棄自己 tag 嘅行）；`v` 淨係 handshake 嘅行先帶；`id` 兩邊都 0–99；`t` 變單字 `r`／`a`／`f`；payload key 縮到 ≤2 字（`ex`／`id`／`rt`／`em`／`vl`／`ro`／`fd`）；行長上限 127 → **253**；micro:bit serial buffer 128 → **254**。
 > ⚠️ **v0**（`{"MB_cmd":"test"}`／`{"MicroBit":…}`／`{"cmd":"control_motor"}`）同 v1／v2 **互不相容**。
@@ -336,6 +337,25 @@ R300 -> mb : {"s":"r300","id":8,"t":"r","op":"mcp_done","p":{"name":"wave","step
 - 空錄影（`start` 之後乜都冇做就 `finish`）→ `badarg`。未 `start` 就 `finish` → `badarg`。
 - ⚠️ **同名重錄：舞步即時更新，描述文字唔會。** R300 上面個 tool object 只註冊一次，而佢個描述欄位係上游 engine 嘅 private member、冇 setter（呢個係刻意決定：唔改 engine 檔）。所以改咗描述要**重開 R300** 先生效 —— R300 會喺 log 出 warning 講明，唔會扮咗當成功。舞步唔受影響，因為播嘅時候先去攞最新嗰段。
 
+### 9.8 `aec_set` —— micro:bit → R300（**兩邊都實作**；R300 側 gate 喺 `CONFIG_USE_DEVICE_AEC`，未上機）
+
+開／關「用戶講話中途打斷 R300」呢個 **runtime** mode：`1` = 開（用戶喺 R300 講緊嘢嘅時候出聲會截斷個回覆，部機改為聽佢）；`0` = 關（只有 wake word 先打斷）。
+
+```
+{"s":"mb","id":85,"t":"r","op":"aec_set","p":{"on":1},"ck":243}
+```
+
+| 欄位 | 值 |
+|---|---|
+| `on` | **恰好 `0` 或者 `1`**。`2`／`"1"`／缺 key → `badarg`，**唔換算、唔 clamp** |
+
+- ⚠️ **絕對值，唔係 toggle**：`{"on":1}` 送十次都係「開」，所以去重 replay 唔會反轉佢。（開機掣雙擊先係 flip，嗰下 flip 喺 R300 板度計，同呢個 op 共用同一個 `ApplyAecMode()`。）
+- ⚠️ **淨係 idle 先准改**，唔 idle → `badarg`：改 mode 會 close audio channel，講緊嘢嗰陣改就係斬咗個回覆。⚠️ 呢個 `badarg` **會入去重 cache**（handler 級錯誤）—— 同一個 `id`+`op` 重送只會 replay 舊答案，**重試要換新 id**（我方每次 `send()` 都攞新 id，所以撳多次個 block 就係新請求）。
+- ⚠️ **冇第二段回覆**：ack 帶 `on` 只代表「R300 收咗」；真正落地喺 main loop，判決要喺 R300 log 睇（`AEC mode -> 1`／`-> 0`）。ack 形狀：`{"st":"ok","on":1}`。
+- ⚠️ **唔寫 NVS**：熄機就冇，reboot 打返 firmware 預設（同開機掣雙擊一致）。
+- ⚠️ **`noop` = 呢部機冇 compile AEC**（`CONFIG_USE_DEVICE_AEC` 唔係 `y`）：`aec_set` 根本冇註冊 —— 唔係條線壞，retry 亦唔會變好。
+- micro:bit 側：`r300.aec(on)`；學生 block 係 `r300_talkover.allowTalkingOver()`／`stopTalkingOver()` —— **兩個絕對狀態 block，冇 toggle**。
+
 ## 10. R300 開機
 
 - RX task 起嗰陣先 `uart_flush_input()`，清走 R300 未 ready 之前囤住嘅過時訊息。Phase 2 之後尤其重要：一句 10 秒前嘅郁指令喺 R300 開完機先執行，部機會突然自己郁。（v0 時期實測：R300 一 ready 就有 11–12 條喺 100ms 內湧入。）
@@ -373,6 +393,8 @@ R300 -> mb : {"s":"r300","id":8,"t":"r","op":"mcp_done","p":{"name":"wave","step
 | mcp_take finish req | 5 | 72 | `{"s":"mb","id":7,"t":"r","op":"mcp_take","p":{"state":"finish"},"ck":5}` |
 | mcp_done req (R300) | 141 | 92 | `{"s":"r300","id":8,"t":"r","op":"mcp_done","p":{"name":"wave","steps":6,"drop":0},"ck":141}` |
 | mcp_done ack (mb) | 21 | 66 | `{"s":"mb","id":8,"t":"a","op":"mcp_done","p":{"st":"ok"},"ck":21}` |
+| aec_set req | 243 | 65 | `{"s":"mb","id":85,"t":"r","op":"aec_set","p":{"on":1},"ck":243}` |
+| aec_set ack ok（帶 `on`） | 199 | 77 | `{"s":"r300","id":85,"t":"a","op":"aec_set","p":{"st":"ok","on":1},"ck":199}` |
 | **mcp_desc 最長（name 16＋desc 34）** | 150 | 128 | `{"s":"mb","id":99,"t":"r","op":"mcp_desc","p":{"name":"abcdefghijklmnop","desc":"dddddddddddddddddddddddddddddddddd"},"ck":150}` |
 | **mcp_done 最長（name 16）** | 10 | 106 | `{"s":"r300","id":99,"t":"r","op":"mcp_done","p":{"name":"abcdefghijklmnop","steps":64,"drop":64},"ck":10}` |
 

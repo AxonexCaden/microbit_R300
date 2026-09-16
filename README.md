@@ -134,6 +134,7 @@ micro:bit (P1 RX) ←────────── R300 (GPIO10 TX, UART port=0
 | `vol_set` | micro:bit → R300 | ✅ 兩邊都實作（`r300.volume()`）。喇叭音量 0..100 |
 | `mcp_desc` | micro:bit → R300 | ✅ 兩邊都實作（`r300.describe()`）。替錄影改名同描述 |
 | `mcp_take` | micro:bit → R300 | ✅ 兩邊都實作（`r300.takeStart()`／`r300.takeFinish()`）。開始錄／收貨 |
+| `aec_set` | micro:bit → R300 | 🆕 兩邊都實作（學生 block `r300_talkover`／內部 `r300.aec()`）。講話中途打斷開／關；**R300 側 gate 喺 `CONFIG_USE_DEVICE_AEC`**（唔係 `y` 就答 `noop`）＋未上機驗證 |
 
 ### 點解要 envelope（v0 嘅三個死症）
 
@@ -162,7 +163,7 @@ serial.setTxBufferSize(254)
 
 ## `r300.ts` 提供咩 Block？
 
-**學生喺 Blocks 畫面見到嘅係各 namespace**（`R300 Movement`／`R300 Hands`／`R300 Emotion`／`R300 Speaker`／`R300 MCP`）—— 五個都係同一個橙色 `#E67E22`，namespace 內部再用 `//% groups` 分小組；下面呢節係內部 `r300.*` API —— 而家全部 `blockHidden`，淨係 TypeScript call 得到。
+**學生喺 Blocks 畫面見到嘅係各 namespace**（`R300 Movement`／`R300 Hands`／`R300 Emotion`／`R300 Speaker`／`R300 MCP`／`R300 Talk Over`）—— 六個都係同一個橙色 `#E67E22`，namespace 內部再用 `//% groups` 分小組；下面呢節係內部 `r300.*` API —— 而家全部 `blockHidden`，淨係 TypeScript call 得到。
 
 學生 block 一覽：
 
@@ -173,6 +174,7 @@ serial.setTxBufferSize(254)
 | `R300 Emotion` | `show face [happy]`（`Emotion Control`） |
 | `R300 Speaker` | `set speaker volume to [50]`（`Audio Actions`） |
 | `R300 MCP` | `describe this routine as …`／`start recording moves`／`finish recording as an AI tool`（`MCP Setup`） |
+| `R300 Talk Over` | `allow talking over R300's reply`／`don't allow talking over R300's reply`（`Talk Over`） |
 
 ⚠️ 手嘅 dropdown 三隻值係 **up = 180°、down = 90°、back = 0°**（跟 `pxt-axonex_test` 個 `HandPosition`）。**2026-09-15 確認：高舉（high five 個 offer）＝ `up`（180°）**，`test_mcp_high_five.ts` 就係用呢個。`protocol.md` 9.5 用「0 = 指前、90 = 向下、180 = 指後」描述同一條 range——兩套叫法指緊同一批數字，唔好兩邊撈亂。
 
@@ -183,13 +185,14 @@ serial.setTxBufferSize(254)
 
 ⚠️ 學生 block（`r300_movement.moveForward` 等）特登回 `void`：有回傳值嘅 function 喺 Blocks 畫面會變成橢圓形 reporter block，只可以插入其他 block 個窿，**拖唔入 `on start`**。內部 `r300.*` 特登有回傳值（`"ok"`／`"timeout"`…），所以更加唔會出 block。
 
-**其餘 8 個係 TypeScript function —— 有 `//%` 但全部 `blockHidden=true`，所以 Blocks 畫面唔會見到。** 佢哋係完整嘅 API（唔係「寫嚟試用」），但要用就要喺 MakeCode 切去 JavaScript 打：
+**其餘 9 個係 TypeScript function —— 有 `//%` 但全部 `blockHidden=true`，所以 Blocks 畫面唔會見到。** 佢哋係完整嘅 API（唔係「寫嚟試用」），但要用就要喺 MakeCode 切去 JavaScript 打：
 
 | Function | 做咩 |
 |---|---|
 | `r300.motor(rot, fwd, ms): string` | 腿。`rot`／`fwd` = -100..100（100 = 全速）、`ms` = 0..3000。兩者都 0 = 停車 |
 | `r300.stopNow(): string` | ⚠️ 停車，同 `motor(0,0,0)` **唔同**：佢會打斷仲喺飛嘅 request。`motor(0,0,0)` 撞正有 request 飛緊嘅時候會**靜靜哋回 `"busy"` 而一個字都唔發**，車繼續行 —— 所以應急停車一定要用呢個 |
 | `r300.arm(a1, a2): string` | 手。`a1` = 右手、`a2` = 左手，physical 0..180（0 指前、90 向下、180 指後）；傳 **-1 = 唔都嗰隻手** |
+| `r300.aec(on): string` | 講話中途打斷開／關（`true` = 用戶可以截斷回覆、`false` = 只有 wake word 先得；**絕對值，唔係 toggle**）。⚠️ 只喺 R300 **idle** 先做得到（busy 會答 `badarg`，而嗰個答案會入去重 cache —— 再撳嗰下係新請求所以 OK）；`noop` = 該 firmware 冇 compile AEC；唔寫 NVS，reboot 打回預設 |
 | `r300.volume(v): string` | 喇叭音量 0..100。R300 另發 `vol_done` 確認真係落咗，個值喺 `r300.lastVolume`（**唔係**你要求咗嗰個 —— 兩個係唔同嘅聲明） |
 | `r300.describe(name, desc): string` | 錄影之前改名同描述。名 1-16 字 `[a-z0-9_]`；**同名再叫 = 描述接落去**，所以長描述分幾句 send（每次 ≤ 34 字） |
 | `r300.takeStart(): string` | 開始錄。名要事先 `describe()` 過 |
