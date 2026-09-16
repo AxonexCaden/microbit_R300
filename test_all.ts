@@ -1,0 +1,310 @@
+// test_all.ts — bench sweep over EVERY block the R300 extension publishes (23 of them, 37 steps).
+//
+// Copy this whole file into a MakeCode micro:bit project that has the R300 extension added and
+// switch to the Blocks view: every call below is one of the blocks a student can drag out, so
+// what this file proves is the BLOCK surface. test.ts covers the other half — the internal
+// r300.* API and the wire protocol — and is the place to look when a step here fails and you
+// want to see the answer R300 actually gave.
+//
+// ⚠️ Needs the block set r300.ts is being updated to. Steps 1-5, 20, 22, 24, 34, 35 and 36 use
+// blocks that do not exist yet (R300 Status, the speaker read/change pair, the recording
+// counters). Paste it in after that change lands, not before — it will not compile otherwise.
+//
+// When it runs: by itself, on start, but only after the handshake. R300 ignores the link for
+// about ten seconds after it powers up, and everything below the gate needs a live link.
+//
+// How it reports — on the LED matrix, never through serial. While the link is up, serial is
+// redirected to R300 on P0/P1, so anything written there goes to the robot, not to a terminal.
+//   · each step shows its own number as it runs, so a step that hangs names itself
+//   · a failing step shows a cross and holds the screen, so the number is easy to write down
+//   · the end: tick = clean; otherwise the failure count, then each failing step number,
+//     blanked between them so two numbers cannot be read as one longer number
+//   · A+B at any moment: stop the wheels — this test drives a real robot
+//   · B (tap) afterwards: run the whole thing again
+//
+// SIDE EFFECTS: the recording section leaves a routine on the robot, REPLACING whatever
+// mcp_microbit_1 held before, and the robot is left stopped, at volume 50, face happy.
+//
+// Not part of the extension: like test_2.ts, this file is not in pxt.json, so it never reaches
+// a student's project. Do not hold A while resetting to run it — that is the USB-serial escape
+// hatch, it skips the serial redirect, and the link is then never up, so step 1 can only fail.
+//
+// Step map (the number on the matrix is the check):
+//    1  R300 is connected                 gate — a failure here ends the run
+//    2  the last command was accepted     false before anything has been sent
+//    3  speaker volume                    reads a real level
+//    4  moves recorded                    reads 0..64, not the "never recorded" placeholder
+//    5  routine was cut short?            false before any take
+//    6  move forward for 1 seconds
+//    7  move backward for 1 seconds
+//    8  move left
+//    9  move right
+//   10  stop driving now
+//   11  drive rot 50 fwd 80 for 1000 ms   the raw block, and the only one that curves
+//   12  stop from another fibre, mid-move  WATCH: it must stop early, not after two seconds
+//   13  move left hand up
+//   14  move right hand down
+//   15  move both hands up
+//   16  move hands to 45 and -1 degrees   -1 = leave the left hand where it is
+//   17  show face happy
+//   18  show face cool                    a second value, so a stuck dropdown shows up
+//   19  set speaker volume to 30
+//   20  speaker volume reads 30           the level R300 CONFIRMED, not the one we asked for
+//   21  change speaker volume by 20
+//   22  speaker volume reads 50
+//   23  change speaker volume by 100      50 + 100 has to clamp to 100, not run past it
+//   24  speaker volume reads 100
+//   25  set speaker volume to 50          back to a sane level for the recording section
+//   26  allow talking over
+//   27  don't allow talking over
+//   28  describe this routine
+//   29  start recording
+//   30  move both hands up                recorded
+//   31  move forward for 1 seconds        recorded
+//   32  move both hands down              recorded
+//   33  finish recording as an AI tool
+//   34  moves recorded > 0                R300 reports the take in a SECOND message
+//   35  routine was cut short?            three moves is nowhere near the 64-step ceiling
+//   36  a 64-character description        refused locally — accepted? must go false
+//   37  stop driving now                  park the robot
+
+// ---------------------------------------------------------------------------
+// Steps 6-37 each assert the one thing a bench can see for itself: that R300 took the request.
+// That is what "the last command was accepted" means, and it is the block a lesson uses to put a
+// robot fact inside an if. The one refusal that can be produced on demand is step 36; the other
+// way accepted? goes false — a second command landing while a request is still waiting for its
+// ack — needs two handlers racing inside a 500 ms window and cannot be scripted.
+// ---------------------------------------------------------------------------
+
+let step = 0
+let fails = 0
+let running = false
+// Every step number that failed, in order, so the summary can walk them back afterwards.
+let failed: number[] = []
+// Only the first pass after a reset sees a micro:bit that has never sent anything; see step 2.
+let firstRun = true
+
+// One step = one number on the matrix, and a failure that cannot be missed. A failed step does
+// not stop the run: it says something about that block, not about the ones after it.
+function check(pass: boolean): boolean {
+    step++
+    basic.showNumber(step, 50)
+    if (!pass) {
+        fails++
+        failed.push(step)
+        basic.showIcon(IconNames.No)
+        basic.pause(1200)
+    }
+    return pass
+}
+
+// The gate. liveCount only leaves 0 once a live cycle has been answered IN THIS SESSION, and
+// that — not the serial port being open — is what "connected" means to the rest of the library.
+// R300 needs about ten seconds after a reboot before it will hear anything, so the timeout has
+// to be generous; overshooting costs nothing, because the loop leaves as soon as it is up.
+function waitForLink(timeoutMs: number): boolean {
+    const deadline = control.millis() + timeoutMs
+    while (!r300_status.isConnected() && control.millis() < deadline) {
+        basic.showIcon(IconNames.Asleep)
+        basic.pause(500)
+    }
+    return r300_status.isConnected()
+}
+
+// A volume lands in a SECOND message: R300 acks the request, then reports later that it actually
+// applied the level (vol_done). "Accepted" and "applied" are two different moments, and only the
+// second one moves the read block — so poll, rather than reading once after the ack.
+function waitForVolume(want: number, timeoutMs: number): boolean {
+    const deadline = control.millis() + timeoutMs
+    while (r300_speaker.volume() != want && control.millis() < deadline) basic.pause(50)
+    return r300_speaker.volume() == want
+}
+
+// Same shape, for the take: R300 reports the finished routine (mcp_done) once, a moment after
+// the ack, and never retries that message.
+function waitForSteps(timeoutMs: number): boolean {
+    const deadline = control.millis() + timeoutMs
+    while (r300_mcp.movesRecorded() <= 0 && control.millis() < deadline) basic.pause(100)
+    return r300_mcp.movesRecorded() > 0
+}
+
+function sweep(): void {
+    // A second sweep while this one is running would share the counters and the matrix, and both
+    // runs would lie. Handlers are separate fibres, so B can arrive at any moment — including in
+    // the middle of this function.
+    if (running) return
+    running = true
+    step = 0
+    fails = 0
+    failed = []
+    basic.showIcon(IconNames.Target)
+    basic.pause(800)
+
+    // 1 — the gate. Everything below needs a live link, so a failure here ends the run instead
+    //     of producing 36 more failures that all mean the same thing.
+    if (!check(waitForLink(30000))) {
+        basic.clearScreen()
+        basic.showIcon(IconNames.Sad)
+        basic.pause(1500)
+        basic.showNumber(1)                  // the number to write down: the link never came up
+        running = false
+        return
+    }
+
+    // 2 — r300.connect() only opens the port and installs the reader; it puts no request on the
+    //     wire, so on a micro:bit that has just booted nothing has been accepted yet. A re-run
+    //     cannot see that state, so there it only checks the block answers at all.
+    check(firstRun ? !r300_status.accepted() : true)
+    firstRun = false
+
+    // 3,4,5 — the read blocks have to answer before anything has been asked of the robot.
+    const volume0 = r300_speaker.volume()
+    check(volume0 >= 0 && volume0 <= 100)                    // 3
+    check(r300_mcp.movesRecorded() >= 0 && r300_mcp.movesRecorded() <= 64)   // 4
+    check(!r300_mcp.recordingWasCutShort())                  // 5
+
+    // 6-11 — the six wheel blocks. Every action block waits out its own move before returning,
+    //        so this list is also the order you see on the floor.
+    r300_movement.moveForward(1)
+    check(r300_status.accepted())                            // 6
+    r300_movement.moveBackward(1)
+    check(r300_status.accepted())                            // 7
+    r300_movement.moveLeft()
+    check(r300_status.accepted())                            // 8
+    r300_movement.moveRight()
+    check(r300_status.accepted())                            // 9
+    r300_movement.stop()
+    check(r300_status.accepted())                            // 10
+    r300_movement.drive(50, 80, 1000)
+    check(r300_status.accepted())                            // 11
+
+    // 12 — a stop from ANOTHER fibre while a move is in flight. That is the whole reason stop()
+    //      exists: drive(0, 0, 0) would come back "busy" without sending anything at all and the
+    //      wheels would carry on. WATCH THE ROBOT — it has to stop a fraction of a second in.
+    control.inBackground(function () {
+        basic.pause(400)
+        r300_movement.stop()
+    })
+    r300_movement.moveForward(2)
+    check(r300_status.accepted())                            // 12
+
+    // 13-16 — the four hand blocks. Watch the robot: 13 and 14 move ONE hand each, and 16's -1
+    //         means "leave that hand alone", because 0 is a real angle.
+    r300_hands.leftHand(r300_hands.HandPose.Up)
+    check(r300_status.accepted())                            // 13
+    r300_hands.rightHand(r300_hands.HandPose.Down)
+    check(r300_status.accepted())                            // 14
+    r300_hands.bothHands(r300_hands.HandPose.Up)
+    check(r300_status.accepted())                            // 15
+    r300_hands.moveHands(45, -1)
+    check(r300_status.accepted())                            // 16
+
+    // 17,18 — two different faces, so a dropdown that never changes is caught.
+    r300_emotion.showFace(r300.Emoji.Happy)
+    check(r300_status.accepted())                            // 17
+    r300_emotion.showFace(r300.Emoji.Cool)
+    check(r300_status.accepted())                            // 18
+
+    // 19-25 — the speaker trio: set, change, read. Same shape as Music's set tempo / change
+    //         tempo by / tempo, with the top of the range exercised so the clamp is proven
+    //         rather than assumed. The "did it apply" steps poll, because the level is
+    //         confirmed in a second message.
+    r300_speaker.setVolume(30)
+    check(r300_status.accepted())                            // 19
+    check(waitForVolume(30, 3000))                           // 20
+    r300_speaker.changeVolumeBy(20)
+    check(r300_status.accepted())                            // 21
+    check(waitForVolume(50, 3000))                           // 22
+    r300_speaker.changeVolumeBy(100)                         // 50 + 100 is past the ceiling
+    check(r300_status.accepted())                            // 23
+    check(waitForVolume(100, 3000))                          // 24
+    r300_speaker.setVolume(50)                               // 25
+    check(r300_status.accepted())
+
+    // 26,27 — the two absolute talk-over states. R300 refuses these with "badarg" whenever it is
+    //         not idle — changing the mode closes the audio channel, which would cut off a reply
+    //         being spoken — so a failure here usually means the robot was talking, not that the
+    //         block is dead. Press it again once it is quiet before believing it.
+    r300_talkover.allowTalkingOver()
+    check(r300_status.accepted())                            // 26
+    r300_talkover.stopTalkingOver()
+    check(r300_status.accepted())                            // 27
+
+    // 28-35 — the recording flow. This is the only part of the extension that leaves something
+    //         behind on the robot, and it REPLACES the tool that was there before.
+    r300_mcp.nameRecording("bench sweep: hands and one step")
+    check(r300_status.accepted())                            // 28
+    r300_mcp.startRecording()
+    check(r300_status.accepted())                            // 29
+
+    // The moves ARE the take, and they still happen live: you are watching the routine being
+    // built. Only moves are captured — a face or a volume change has nowhere to go in a take.
+    r300_hands.bothHands(r300_hands.HandPose.Up)
+    check(r300_status.accepted())                            // 30
+    r300_movement.moveForward(1)
+    check(r300_status.accepted())                            // 31
+    r300_hands.bothHands(r300_hands.HandPose.Down)
+    check(r300_status.accepted())                            // 32
+
+    r300_mcp.finishRecording()
+    check(r300_status.accepted())                            // 33
+    check(waitForSteps(5000))                                // 34 the mcp_done, not the ack
+    check(!r300_mcp.recordingWasCutShort())                  // 35 three moves, ceiling is 64
+
+    // 36 — a description past the 32-character limit is refused HERE, before anything is sent:
+    //      the robot never hears about it, the matrix shows 32 (the limit that blocked it), and
+    //      the accepted? block has to say no. Repeatable, unlike the busy case.
+    r300_mcp.nameRecording("this description is definitely longer than thirty-two characters")
+    check(!r300_status.accepted())                           // 36
+
+    // 37 — park it.
+    r300_movement.stop()
+    check(r300_status.accepted())                            // 37
+    r300_emotion.showFace(r300.Emoji.Happy)
+    r300_hands.bothHands(r300_hands.HandPose.Down)
+
+    // ---- summary ----------------------------------------------------------
+    // 0 = every check passed. Otherwise: how many failed, then which ones, blanked between so
+    // two step numbers cannot be read as one longer number.
+    basic.clearScreen()
+    if (fails == 0) {
+        basic.showIcon(IconNames.Yes)
+        basic.pause(1500)
+        basic.showNumber(0)
+    } else {
+        basic.showIcon(IconNames.Sad)
+        basic.pause(1500)
+        basic.showNumber(fails)
+        for (let i = 0; i < failed.length; i++) {
+            basic.clearScreen()
+            basic.pause(600)
+            basic.showNumber(failed[i])
+            basic.pause(600)
+        }
+    }
+    running = false
+}
+
+// ---------------------------------------------------------------------------
+// Safety net first: this test drives a real robot.
+// ---------------------------------------------------------------------------
+input.onButtonPressed(Button.AB, function () {
+    r300_movement.stop()
+})
+
+// Tap B to run it again. On B rather than A, because holding A during a reset is the USB-serial
+// escape hatch: with it held the port is never redirected and the link never comes up, so the
+// gate could only fail. A tap of A is also what the other bench files already use.
+input.onButtonPressed(Button.B, function () {
+    sweep()
+})
+
+// Top level, so it runs once at power-up, before any handler.
+//
+// connect() is called here as well as at the end of r300.ts, on purpose: it is guarded, so a
+// second call costs nothing, and it means this file does not care whether its top-level code
+// happens to run before or after r300.ts's. Without it, a build that ordered the test first would
+// sit in the gate's wait loop with the serial port never opened, and the 30 s timeout would end
+// up blaming the robot for it.
+r300.connect()
+sweep()

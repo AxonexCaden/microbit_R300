@@ -54,6 +54,28 @@ namespace r300 {
     // 1ms tick of its wait loop, so this normally costs about a millisecond.
     let abandoned = false
 
+    // The reply to the most recent request, worded the way R300 words it: "ok" when it took the
+    // request, or "badarg" / "noop" / "badver" / "busy" / "timeout" / "long" when it did not.
+    // The student-facing ACTION blocks throw that answer away on purpose — one refusal should
+    // not put a number on the LED of every block — so it is kept here instead, for the status
+    // block that does want it. "" until something has been sent.
+    export let lastReply = ""
+
+    // The single writer for lastReply. Exported because the student-facing wrappers refuse some
+    // input THEMSELVES — a description past 32 characters never leaves the micro:bit — and that
+    // refusal has to be as visible to a status block as one R300 sent back.
+    export function setLastReply(reply: string): void {
+        lastReply = reply
+    }
+
+    // "Record and return", for the paths in this file that produce a reply WITHOUT going through
+    // send(): nothing went on the wire, but the request still failed, and a status block has to
+    // be able to see that.
+    function keepReply(reply: string): string {
+        setLastReply(reply)
+        return reply
+    }
+
     function noteReply(id: number, op: string, p: any): void {
         if (id != waitId || op != waitOp) return
         if (waitState != "") return                 // already answered; a late duplicate changes nothing
@@ -87,12 +109,12 @@ namespace r300 {
     //% blockHidden=true
     //% weight=60
     export function send(op: string, pJson: string): string {
-        if (busy) return "busy"
+        if (busy) return keepReply("busy")
         busy = true
         abandoned = false     // a fresh request waits for its own ack, not the last one's
         const result = sendOne(op, pJson)
         busy = false          // the single release point: every sendOne exit passes through here
-        return result
+        return keepReply(result)
     }
 
     function sendOne(op: string, pJson: string): string {
@@ -161,7 +183,9 @@ namespace r300 {
         // report "busy" rather than put a second request on top of the first.
         const deadline = control.millis() + kStopWaitMs
         while (busy && control.millis() < deadline) basic.pause(1)
-        if (busy) return "busy"
+        // The only exit from here that never reaches send(), so the only one that has to record
+        // its own answer.
+        if (busy) return keepReply("busy")
         return send("leg_set", "{\"ro\":0,\"fd\":0,\"ms\":0}")
     }
 
@@ -186,10 +210,10 @@ namespace r300 {
     export function describe(name: string, desc: string): string {
         // Caught here rather than left to send(), because "long" is the one failure a student can
         // actually fix — by splitting the description across several describe() calls.
-        if (desc.length > kMaxDescChars) return "long"
+        if (desc.length > kMaxDescChars) return keepReply("long")
         // The name becomes part of a tool name on R300, so its rule ([a-z0-9_], 1-16 chars)
         // is enforced here too — same answer whether or not the link is up.
-        if (!isToken(name)) return "badarg"
+        if (!isToken(name)) return keepReply("badarg")
         return send("mcp_desc", "{\"name\":\"" + name + "\",\"desc\":\"" + desc + "\"}")
     }
 
@@ -389,12 +413,19 @@ namespace r300 {
 // The r300.* blocks above are hidden from the toolbox (blockHidden in their annotations),
 // so this is everything a student sees; r300 itself stays callable from TypeScript.
 //
+// The toolbox layout is deliberately flat: one namespace per category, weights ordering the
+// blocks inside it, and group labels ONLY where they earn their keep — so the main list carries
+// no label, because a label over a single block is noise. `others` is the reserved name for
+// that unlabelled list and it is listed FIRST on purpose: the groups array is also the order the
+// groups appear in the flyout. Each action category ends with its "More" group, which is where
+// the two manual-control blocks live — out of a beginner's way, but still in the toolbox.
+//
 // Every numeric input is rounded and clamped before the request is built — the block fields
 // already clamp typed values in the IDE, but a value computed in JavaScript never met one.
 // ---------------------------------------------------------------------------
 
-//% color="#E67E22" icon="\uf085" block="R300 Movement"
-//% groups="['Move', 'Turn', 'Stop', 'Custom']"
+//% color="#E67E22" icon="\uf085" weight=95 block="R300 Movement"
+//% groups="['others', 'More']"
 namespace r300_movement {
     // Fixed speeds, as percent of full speed. Deliberately not fields: the block a student
     // picks says WHICH WAY, and how long is the only thing worth tuning in a lesson.
@@ -412,8 +443,7 @@ namespace r300_movement {
      */
     //% blockId=r300_movement_forward block="move forward for %seconds seconds"
     //% seconds.min=1 seconds.max=3 seconds.defl=1
-    //% weight=90
-    //% group="Move"
+    //% weight=100
     export function moveForward(seconds: number): void {
         driveStraight(MOVE_SPEED, seconds)
     }
@@ -423,8 +453,7 @@ namespace r300_movement {
      */
     //% blockId=r300_movement_backward block="move backward for %seconds seconds"
     //% seconds.min=1 seconds.max=3 seconds.defl=1
-    //% weight=89
-    //% group="Move"
+    //% weight=90
     export function moveBackward(seconds: number): void {
         driveStraight(-MOVE_SPEED, seconds)
     }
@@ -435,8 +464,7 @@ namespace r300_movement {
      * something a student can usefully guess at.
      */
     //% blockId=r300_movement_left block="move left"
-    //% weight=88
-    //% group="Turn"
+    //% weight=80
     export function moveLeft(): void {
         turn(-TURN_SPEED)
     }
@@ -445,8 +473,7 @@ namespace r300_movement {
      * Turn right on the spot. The mirror of moveLeft().
      */
     //% blockId=r300_movement_right block="move right"
-    //% weight=87
-    //% group="Turn"
+    //% weight=70
     export function moveRight(): void {
         turn(TURN_SPEED)
     }
@@ -456,8 +483,7 @@ namespace r300_movement {
      * flight, so it works as an emergency stop even from another button handler.
      */
     //% blockId=r300_movement_stop block="stop driving now"
-    //% weight=86
-    //% group="Stop"
+    //% weight=60
     export function stop(): void {
         r300.stopNow()
     }
@@ -473,8 +499,8 @@ namespace r300_movement {
     //% rot.min=-100 rot.max=100 rot.defl=0
     //% fwd.min=-100 fwd.max=100 fwd.defl=50
     //% ms.min=0 ms.max=3000 ms.defl=1000
-    //% weight=85
-    //% group="Custom"
+    //% weight=10
+    //% group="More"
     export function drive(rot: number, fwd: number, ms: number): void {
         // Round first, then clamp: the clamp must be the LAST step, or rounding a boundary
         // value could push it back out of range. Keep these bounds in step with the //% values.
@@ -512,8 +538,8 @@ namespace r300_movement {
     }
 }
 
-//% color="#E67E22" icon="\uf256" block="R300 Hands"
-//% groups="['Left Hand', 'Right Hand', 'Both Hands', 'Custom']"
+//% color="#E67E22" icon="\uf256" weight=94 block="R300 Hands"
+//% groups="['others', 'More']"
 namespace r300_hands {
     /**
      * Where a hand can point — the dropdown offers exactly these three.
@@ -539,8 +565,7 @@ namespace r300_hands {
      * so it cannot mean "don't move".
      */
     //% blockId=r300_hands_left block="move left hand %pose"
-    //% weight=90
-    //% group="Left Hand"
+    //% weight=100
     export function leftHand(pose: HandPose): void {
         // a1 = right hand, so the hand this block means is a2.
         r300.arm(-1, pose)
@@ -550,8 +575,7 @@ namespace r300_hands {
      * Move the RIGHT hand only. The mirror of leftHand().
      */
     //% blockId=r300_hands_right block="move right hand %pose"
-    //% weight=89
-    //% group="Right Hand"
+    //% weight=90
     export function rightHand(pose: HandPose): void {
         r300.arm(pose, -1)
     }
@@ -561,8 +585,7 @@ namespace r300_hands {
      * "both up" looks symmetric on the robot.
      */
     //% blockId=r300_hands_both block="move both hands %pose"
-    //% weight=88
-    //% group="Both Hands"
+    //% weight=80
     export function bothHands(pose: HandPose): void {
         r300.arm(pose, pose)
     }
@@ -577,8 +600,8 @@ namespace r300_hands {
     //% blockId=r300_hands_move block="move hands to %a1 and %a2 degrees"
     //% a1.min=-1 a1.max=180 a1.defl=90
     //% a2.min=-1 a2.max=180 a2.defl=90
-    //% weight=85
-    //% group="Custom"
+    //% weight=10
+    //% group="More"
     export function moveHands(a1: number, a2: number): void {
         // -1 (leave the hand alone) is the floor, so clamping can never turn "skip" into a move.
         a1 = r300.clamp(Math.round(a1), -1, 180)
@@ -587,39 +610,71 @@ namespace r300_hands {
     }
 }
 
-//% color="#E67E22" icon="\uf118" block="R300 Emotion"
-//% groups="['Emotion Control']"
+//% color="#E67E22" icon="\uf118" weight=93 block="R300 Emotion"
 namespace r300_emotion {
     /**
      * Show a face on R300's monitor (the eyes). The face stays until something else
      * changes it.
      */
     //% blockId=r300_emotion_show block="show face %e"
-    //% weight=90
-    //% group="Emotion Control"
+    //% weight=100
     export function showFace(e: r300.Emoji): void {
         r300.emoji(e)
     }
 }
 
-//% color="#E67E22" icon="\uf028" block="R300 Speaker"
-//% groups="['Audio Actions']"
+//% color="#E67E22" icon="\uf028" weight=92 block="R300 Speaker"
 namespace r300_speaker {
     /**
      * Set the speaker volume, 0..100.
      */
     //% blockId=r300_speaker_volume block="set speaker volume to %v"
     //% v.min=0 v.max=100 v.defl=50
-    //% weight=90
-    //% group="Audio Actions"
+    //% weight=100
     export function setVolume(v: number): void {
         v = r300.clamp(Math.round(v), 0, 100)
         r300.volume(v)
     }
+
+    /**
+     * Turn the volume up (positive) or down (negative) by `v`, from whatever R300 last
+     * confirmed. set / change / read is the same trio Music offers for tempo, and it is what
+     * makes "set" and "change" teachable against something the student can HEAR.
+     */
+    //% blockId=r300_speaker_change block="change speaker volume by %v"
+    //% v.min=-100 v.max=100 v.defl=10
+    //% weight=90
+    export function changeVolumeBy(v: number): void {
+        // Round and clamp the step first, then let setVolume clamp the total — the order every
+        // other wrapper here uses, so a computed value meets the same bounds a typed one does.
+        // Clamping the TOTAL is what keeps a change at the ceiling from being refused: R300
+        // answers badarg for an out-of-range volume rather than clamping it, and a change block
+        // that silently did nothing there would look broken.
+        v = r300.clamp(Math.round(v), -100, 100)
+        setVolume(speakerVolumeNow() + v)
+    }
+
+    /**
+     * The volume R300 last CONFIRMED it applied, 0..100 — not the level that was asked for.
+     * Until one has been confirmed this reads 50, the same default the set block offers: R300
+     * never reports the level it booted with, so there is no truer number to read before the
+     * first set.
+     */
+    //% blockId=r300_speaker_volume_now block="speaker volume"
+    //% weight=80
+    export function volume(): number {
+        return speakerVolumeNow()
+    }
+
+    // The level to change FROM, and the one the read block reports. lastVolume is what R300
+    // confirmed it APPLIED (protocol.ts tracks it from vol_done); -1 means it never confirmed
+    // one, which is the only case where the set block's default is the best answer available.
+    function speakerVolumeNow(): number {
+        return r300.lastVolume >= 0 ? r300.lastVolume : 50
+    }
 }
 
-//% color="#E67E22" icon="\uf130" block="R300 Talk Over"
-//% groups="['Talk Over']"
+//% color="#E67E22" icon="\uf130" weight=90 block="R300 Talk Over"
 namespace r300_talkover {
     /**
      * Let the user interrupt R300 by talking while it is speaking: it stops the reply and
@@ -630,8 +685,7 @@ namespace r300_talkover {
      * a refusal: if it was pressed mid-reply, simply press it again once the reply finishes.
      */
     //% blockId=r300_talkover_allow block="allow talking over R300's reply"
-    //% weight=90
-    //% group="Talk Over"
+    //% weight=100
     export function allowTalkingOver(): void {
         r300.aec(true)
     }
@@ -641,15 +695,13 @@ namespace r300_talkover {
      * allowTalkingOver(), and the state a freshly booted R300 starts in.
      */
     //% blockId=r300_talkover_stop block="don't allow talking over R300's reply"
-    //% weight=89
-    //% group="Talk Over"
+    //% weight=90
     export function stopTalkingOver(): void {
         r300.aec(false)
     }
 }
 
-//% color="#E67E22" icon="\uf0d0" block="R300 MCP"
-//% groups="['MCP Setup']"
+//% color="#E67E22" icon="\uf0d0" weight=91 block="R300 AI Tools"
 namespace r300_mcp {
     // The description is what the voice AI reads to decide when to call the tool, and it is
     // the one field a student types that can run past what one protocol line carries
@@ -665,9 +717,12 @@ namespace r300_mcp {
     // call, rather than adding another tool beside it.
     const TOOL_NAME = "mcp_microbit_1"
 
-    // Local refusals show the limit that blocked them on the LED. Nothing was sent, so
-    // there is no ack and nothing in R300's log to find.
+    // Local refusals show the limit that blocked them on the LED. Nothing was sent, so there is
+    // no ack and nothing in R300's log to find — which is exactly why the status side is told
+    // here instead: what a status block reads has to cover the refusals this side makes on its
+    // own, not only the ones R300 sends back.
     function refuse(limit: number): void {
+        r300.setLastReply("long")
         basic.showNumber(limit)
         basic.pause(1000)
         basic.clearScreen()
@@ -682,8 +737,7 @@ namespace r300_mcp {
      * 32 on the LED (nothing is sent to R300).
      */
     //% blockId=r300_mcp_name block="describe this routine as %desc (max 32 chars)"
-    //% weight=90
-    //% group="MCP Setup"
+    //% weight=100
     export function nameRecording(desc: string): void {
         if (desc.length > DESC_MAX) {
             refuse(DESC_MAX)
@@ -697,8 +751,7 @@ namespace r300_mcp {
      * still happen live while you perform them.
      */
     //% blockId=r300_mcp_start block="start recording moves"
-    //% weight=89
-    //% group="MCP Setup"
+    //% weight=90
     export function startRecording(): void {
         r300.takeStart()
     }
@@ -707,10 +760,74 @@ namespace r300_mcp {
      * Stop recording and publish it as a tool the voice AI can call by name.
      */
     //% blockId=r300_mcp_finish block="finish recording as an AI tool"
-    //% weight=88
-    //% group="MCP Setup"
+    //% weight=80
     export function finishRecording(): void {
         r300.takeFinish()
+    }
+
+    /**
+     * How many moves the last finished routine actually captured — 0 until a take has been
+     * published.
+     *
+     * R300 keeps at most 64 moves. A routine that ran longer still performed every move but
+     * only recorded the first 64, so read this after finishRecording() when it matters.
+     */
+    //% blockId=r300_mcp_steps block="moves recorded"
+    //% weight=70
+    export function movesRecorded(): number {
+        // -1 is protocol.ts's "no take has ever been reported", which is not a number a student
+        // can do anything with. 0 is the truthful reading: nothing recorded yet.
+        return r300.lastTakeSteps >= 0 ? r300.lastTakeSteps : 0
+    }
+
+    /**
+     * Did the last recording throw moves away? True when the routine ran past R300's 64-move
+     * ceiling: those moves still happened, they were just not captured, so the AI tool replays
+     * less than the student performed. This is the only place a truncated take shows up on this
+     * side of the link.
+     *
+     * False before any take, and false for a routine that fits — "short enough" and "too long"
+     * are the two cases that matter, and only the second one is a problem.
+     */
+    //% blockId=r300_mcp_cut block="routine was cut short?"
+    //% weight=60
+    export function recordingWasCutShort(): boolean {
+        return r300.lastTakeDrop > 0
+    }
+}
+
+//% color="#E67E22" icon="\uf059" weight=89 block="R300 Status"
+namespace r300_status {
+    /**
+     * Is the link up? True from the moment R300 has handshaked with this micro:bit and answered
+     * a live check in THIS session — so it reads false for R300's first ten seconds after power
+     * up, and false again if R300 reboots while the program is running.
+     *
+     * This is the block a lesson puts in a while loop to wait for the robot, and the first thing
+     * to check before blaming a program for doing nothing.
+     */
+    //% blockId=r300_status_connected block="R300 is connected"
+    //% weight=100
+    export function isConnected(): boolean {
+        // liveCount is reset by every new session (an R300 restart, or a hello arriving after
+        // the live check gave up), so > 0 answers "up in THIS session" rather than "has been up
+        // at some point", which a running total could never answer once a restart has happened.
+        return r300.liveCount > 0
+    }
+
+    /**
+     * Did R300 accept the last command? False when it refused the request, when nothing answered
+     * in time, and when a block refused the input itself — a description past 32 characters
+     * never leaves the micro:bit at all.
+     *
+     * "Accepted" is the strongest promise the link makes: R300 has the request, not that a move
+     * has finished. Every action block returns void on purpose, so a refusal is silent
+     * everywhere else; this is the block that makes it visible where a program wants to look.
+     */
+    //% blockId=r300_status_accepted block="the last command was accepted"
+    //% weight=90
+    export function accepted(): boolean {
+        return r300.lastReply == "ok"
     }
 }
 
