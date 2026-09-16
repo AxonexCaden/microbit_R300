@@ -34,12 +34,12 @@ namespace r300 {
     // Until now R300 drove everything and the micro:bit only answered. This is the first
     // thing that goes the other way, so it is deliberately the smallest sender that is
     // still correct: one request outstanding, a fresh id per request, retries that reuse
-    // that id, and a fin only after a final ack (protocol.md 6, 8).
+    // that id, and a fin only after a final ack (README.md 6, 8).
     // ---------------------------------------------------------------------------
 
     const kAckTimeoutMs = 500
     // Longest description one describe() carries; longer text is appended across calls
-    // (protocol.md 9.7). Sentence-sized on purpose -- fitting one 253-byte line is no
+    // (README.md 9.7). Sentence-sized on purpose -- fitting one 253-byte line is no
     // longer what sets it.
     const kMaxDescChars = 34
     // How long stopNow() gives a request to abandon itself before it gives up on it. The
@@ -502,7 +502,7 @@ namespace r300_hands {
      *
      * The angles follow pxt-axonex_test's HandPosition: up = 180°, down = 90°, back = 0°.
      * Confirmed 2026-09-15: up (180°) is the RAISED pose, and that is what test_mcp_high_five.ts's
-     * high five offers with. ⚠️ protocol.md 9.5 describes the same wire range in other words
+     * high five offers with. ⚠️ README.md 9.5 describes the same wire range in other words
      * (0 = pointing forward, 90 = down, 180 = back) — two sets of names for the same numbers,
      * so do not read one back onto the other.
      */
@@ -605,7 +605,7 @@ namespace r300_speaker {
 namespace r300_mcp {
     // The description is what the voice AI reads to decide when to call the tool, and it is
     // the one field a student types that can run past what one protocol line carries
-    // (protocol.md 9.7 chunks it at 34 characters a call). 32 keeps a chunk under that
+    // (README.md 9.7 chunks it at 34 characters a call). 32 keeps a chunk under that
     // AND keeps the text short enough to be useful as a tool description. A longer one is
     // REFUSED, never truncated: a quiet fix-up would look like it worked while the AI only
     // got half a clue. The block text says "(max 32 chars)" — keep the two in step.

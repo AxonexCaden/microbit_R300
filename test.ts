@@ -149,7 +149,7 @@ function protocolSweep(driveWheels: boolean): void {
 // lastTakeSteps becomes a number to compare against rather than a shrug.
 const kRecordScripted = true      // false = the old 10s operator window
 const kRecordWindowMs = 10000
-const kHandsForward = 0           // protocol.md 9.5: 0 = forward, 90 = down, 180 = backward
+const kHandsForward = 0           // README.md 9.5: 0 = forward, 90 = down, 180 = backward
 const kHandsDown = 90
 // 1-16 chars of a-z, 0-9, _ ONLY — it becomes part of the AI's tool name (self.microbit.<name>),
 // so no spaces and no capitals. The description is capped at 34 chars PER CALL; calling
@@ -263,7 +263,7 @@ function performHighFive(): void {
 // log first thing.
 //
 // The trigger is the first `live` cycle, not `hello`. R300 does not start its live check
-// until it has seen our hello ack (protocol.md 8), so a live cycle is the earliest proof
+// until it has seen our hello ack (README.md 8), so a live cycle is the earliest proof
 // that the handshake COMPLETED rather than merely started — and it is the only trigger
 // that still works when the micro:bit is flashed while R300 keeps running, because R300
 // finished its hello phase long ago and will never send another one.
@@ -338,7 +338,7 @@ if (kAutoBringUp) {
 // B HELD for a second: run the protocol sweep above instead.
 // Deliberately asymmetric: arm(90, 90) moves both hands to the same angle and therefore proves
 // only that both hands work — it cannot tell a1 from a2, which is the open question
-// (the 1=right / 2=left mapping is still an assumption, protocol.md 9.5).
+// (the 1=right / 2=left mapping is still an assumption, README.md 9.5).
 // -1 means "leave that hand alone"; 0 would be a real angle (pointing forward).
 const kSweepHoldMs = 1000
 input.onButtonPressed(Button.B, function () {

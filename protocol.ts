@@ -1,4 +1,4 @@
-// R300 UART link, protocol v2 (protocol.md). No //% annotations here: nothing in this file is a block.
+// R300 UART link, protocol v2 (README.md). No //% annotations here: nothing in this file is a block.
 namespace r300 {
     export const PROTOCOL_VERSION = 2
     // This side's sender tag. A line that comes back carrying it is our own transmission,
@@ -8,7 +8,7 @@ namespace r300 {
     export const MAX_LINE_BYTES = 253
     // What R300 logs as `ex`. Keep in step with pxt.json's "version", and keep
     // it inside 23 chars ([A-Za-z0-9._+-]) -- R300 truncates past that and the
-    // test vectors in protocol.md assume it.
+    // test vectors in README.md assume it.
     export const EXT_VERSION = "0.1.0"
 
     // Last volume R300 confirmed as APPLIED (via vol_done), or -1 if it never has.
@@ -46,7 +46,7 @@ namespace r300 {
     // an R300 restart: a session that never reached a live cycle has nothing else to go on.
     let ackedHello = false
 
-    // The last recording R300 reported committing, from its `mcp_done` (protocol.md 9.7):
+    // The last recording R300 reported committing, from its `mcp_done` (README.md 9.7):
     // the tool's name, how many moves it captured, and how many it THREW AWAY because the
     // take ran past R300's 64-step ceiling. All three stay empty/-1 until one lands.
     // ⚠️ `lastTakeDrop` is the only place a truncated routine shows up on this side — a take
@@ -145,7 +145,7 @@ namespace r300 {
         // v rides only on the handshake's lines, so a line without it is never a mismatch.
         const v = msg["v"]
         if (v !== undefined && v !== PROTOCOL_VERSION) {
-            // protocol.md 7 #3: a peer that disagrees about `v` answers with a badver ack built
+            // README.md 7 #3: a peer that disagrees about `v` answers with a badver ack built
             // on ITS OWN version, so that reply fails the very check we are standing in. Without
             // the exception below, a sender sits out its whole retry budget and reports "timeout"
             // for what is really a version mismatch — the one failure it cannot resend its way out
@@ -167,7 +167,7 @@ namespace r300 {
             // run than the one it was talking to. See SESSION_ID.
             return buildLine("a", id, op, "{\"st\":\"ok\",\"id\":" + SESSION_ID + "}")
         }
-        // R300 raises this itself once the volume has actually landed (protocol.md 9.6).
+        // R300 raises this itself once the volume has actually landed (README.md 9.6).
         // Nothing to do but confirm it: answering "noop" would make R300 log the whole
         // two-stage path as failed even though the volume was set.
         if (op == "vol_done") {
@@ -185,7 +185,7 @@ namespace r300 {
             if (p !== undefined && p !== null && typeof p["fw"] == "string") peerFw = p["fw"]
             return buildLine("a", id, op, "{\"st\":\"ok\",\"ex\":\"" + EXT_VERSION + "\"}", true)
         }
-        // R300's SECOND reply to a recording (protocol.md 9.7): the mcp_take ack already said
+        // R300's SECOND reply to a recording (README.md 9.7): the mcp_take ack already said
         // "taken", this one says the tool is now live and how big it turned out to be. R300
         // sends it once and never retries it, so a request landing here with no branch to catch
         // it loses that recording's step count for good — which is exactly what happened while
