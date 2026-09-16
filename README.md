@@ -159,6 +159,12 @@ that loops forever.
 | 3 | `v`, **if present**, equals the receiver's | answer `badver`; one exception — a `badver` ack for the request you are waiting on is accepted, or a mismatched pair could never tell each other |
 | 4 | `(id, op)` not the last request already served | replay the previous answer without running it again |
 
+Beyond the table: a request refused **before execution** (`badck` / `badver` /
+`noop` / `badarg`) is **not recorded** — a correct resend of the same id must
+still run — and the record is **cleared when a new session opens**: the robot
+clears its own the moment `hello`'s ack arrives, so a micro:bit that restarted
+at id 0 cannot be mistaken for a replay. The micro:bit keeps no record at all.
+
 ### 8. Sender rules
 
 - Ack timeout **500 ms** (`hello`: 300 ms). On timeout or `badck`, resend with
