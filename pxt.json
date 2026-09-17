@@ -13,7 +13,7 @@
         "r300.ts"
     ],
     "testFiles": [
-        "test_all.ts"
+        "r300_demo.ts"
     ],
     "public": true,
     "supportedTargets": [
