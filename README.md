@@ -47,7 +47,7 @@ Two things that surprise people:
 
 ## What you can control
 
-Seven groups in the toolbox:
+Eight groups in the toolbox:
 
 | Group | What it does |
 |---|---|
@@ -58,6 +58,7 @@ Seven groups in the toolbox:
 | **R300 AI** | Talk to the robot's AI: `start` / `end an AI conversation` (what its own boot button does), and describe + record a routine so the robot replays it on a voice command. `moves recorded` and `routine was cut short?` report what the last take captured |
 | **R300 Talk Over** | Allow, or stop, talking over the robot's reply — two absolute states, never a toggle |
 | **R300 Status** | `R300 is connected` and `the last command was accepted` — the two values a program can put in a variable or test in an `if` |
+| **R300 Music** | `play song` — one of the robot's three songs, by name. Music only: the robot does not drive itself while a song plays, and it stops hearing you until the song ends |
 
 Two groups in one program:
 
@@ -80,6 +81,7 @@ These have no blocks — use the **JavaScript** tab:
 | `r300.aec(on)` | Talk-over on/off — absolute; needs a robot built with the feature |
 | `r300.ai(on)` | Conversation with the AI on/off — absolute; the boot button's other half |
 | `r300.volume(v)` | Volume, 0–100 |
+| `r300.song(ix)` | Play one of the three songs, 0–2; needs a robot built with the feature |
 | `r300.describe(name, desc)` | Name and describe a recording before taking it |
 | `r300.takeStart()` / `r300.takeFinish()` | Start / finish a recording |
 | `r300.send(op, pJson)` | Send any operation directly |
@@ -247,7 +249,7 @@ cannot tell the two apart:
 A refusal is cached against `(id, op)` (7 #4), so a retry needs a **new id** —
 which is what the extension's sender gives every request anyway.
 
-Test vectors, each checked against the rule in (4):
+Test vectors, each checked against the rule in (7 #4):
 
 | Request | Answer |
 |---|---|
@@ -259,6 +261,59 @@ Test vectors, each checked against the rule in (4):
 
 93 and 94 sharing `ck:147` is correct, not a typo: the id rises by 1 while `on`
 falls by 1, and the two cancel.
+
+**9.10 `song_set`** — `{"ix":0｜1｜2}`. Play one of the robot's three songs by
+number: `0` = ActiveSummer, `1` = CosmicFluff, `2` = Fever. The ack means
+**accepted**, not audible.
+
+```
+{"s":"mb","id":60,"t":"r","op":"song_set","p":{"ix":0},"ck":125}
+{"s":"r300","id":60,"t":"a","op":"song_set","p":{"st":"ok","ix":0},"ck":<N>}
+{"s":"r300","id":60,"t":"a","op":"song_set","p":{"st":"err","e":"badarg"},"ck":<N>}
+```
+
+The ack carries the index back. There is no second reply after it, and nothing
+later reports that the song ended.
+
+⚠️ **MUSIC ONLY** — the robot does not move on its own while a song plays. Your
+program keeps full control of the wheels and hands, so drive them yourself with
+the movement blocks. That is the whole point of the block.
+
+⚠️ There is **no "the song finished" reply, and no way to ask**. A song plays to
+the end unless something interrupts it, so a program that wants to chain two
+songs has to time the gap itself. A song cut short (the boot button, the robot's
+own `stop_dance`, or the model starting a dance) is silent.
+
+⚠️ While the music plays the robot **cannot hear anyone** — it mutes its own mic
+so the song does not loop back, which means it cannot hear its wake word (9.9)
+until the song ends.
+
+`badarg` covers a malformed payload, an index outside 0–2, **and a song already
+playing** — a program cannot tell those apart. It never replaces what is playing.
+The index is the robot's own numbering, refused rather than clamped, so a wrong
+one cannot quietly play song 0 instead. A refusal is cached against `(id, op)`
+(7 #4), so a retry needs a **new id** — which is what the extension's sender gives
+every request anyway.
+
+`noop` means that robot's firmware predates this op — the same lesson as `ai_set`.
+
+The index space is the robot's song list order and nothing more. If that order
+ever changes, every saved student program points at a different song.
+
+Test vectors, each checked against the rule in (7 #4):
+
+| Request | Answer |
+|---|---|
+| `{"s":"mb","id":60,"t":"r","op":"song_set","p":{"ix":0},"ck":125}` | `ok`, `ix:0` |
+| `{"s":"mb","id":61,"t":"r","op":"song_set","p":{"ix":1},"ck":127}` | `ok`, `ix:1` |
+| `{"s":"mb","id":62,"t":"r","op":"song_set","p":{"ix":3},"ck":130}` | `badarg` — only 3 songs |
+| `{"s":"mb","id":63,"t":"r","op":"song_set","p":{},"ck":241}` | `badarg` — `ix` missing |
+| `{"s":"mb","id":64,"t":"r","op":"song_set","p":{"ix":"1"},"ck":198}` | `badarg` — `ix` is a string |
+
+60 and 61 differ by exactly 2 — the id rises by 1 and the index rises by 1, so
+the two stack — and 62 is 3 beyond 61 for the same reason. 64 is the odd one at
++73: `"1"` is three bytes where the bare `0` was one, and the two quote
+characters are what the gap is made of.
 
 ### 10. Timing summary
 

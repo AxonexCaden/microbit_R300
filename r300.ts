@@ -408,6 +408,28 @@ namespace r300 {
         return send("ai_set", "{\"on\":" + (on ? 1 : 0) + "}")
     }
 
+    /**
+     * Play one of the robot's three songs by number: 0 = ActiveSummer, 1 = CosmicFluff, 2 = Fever.
+     * "ok" means R300 accepted the request, not that anything is audible yet.
+     * MUSIC ONLY: R300 does not move on its own while a song plays, so the wheels and hands stay
+     * the program's to drive. There is no "the song finished" reply and no way to ask for one, so
+     * a program that chains two songs has to time the gap itself, and a song cut short (boot
+     * button, R300's own stop_dance, the model starting a dance) says nothing. While music plays
+     * R300 mutes its own mic, so it cannot hear anyone until the song ends.
+     * "badarg" is the one answer to plan for, and it covers a malformed payload, an index outside
+     * 0..2 AND a song already playing — a program cannot tell those apart, and this never replaces
+     * what is playing. The index is deliberately NOT clamped: it is the robot's own numbering, so
+     * a wrong one has to look wrong on the bench rather than quietly play song 0. "noop" means
+     * this R300's firmware predates song_set, the same lesson as aec_set and ai_set.
+     */
+    //% blockId=r300_song block="play song %ix"
+    //% blockHidden=true
+    //% ix.min=0 ix.max=2 ix.defl=0
+    //% weight=91
+    export function song(ix: number): string {
+        return send("song_set", "{\"ix\":" + ix + "}")
+    }
+
     // Clamp a number into an inclusive range. Deliberately NOT a block: it exists for the
     // student-facing wrappers below, whose arguments can come from JavaScript or from
     // arithmetic and therefore never met a block field's min/max. R300 refuses out-of-range
@@ -883,6 +905,53 @@ namespace r300_status {
     //% weight=90
     export function accepted(): boolean {
         return r300.lastReply == "ok"
+    }
+}
+
+//% color="#E67E22" icon="\uf001" weight=88 block="R300 Music"
+namespace r300_music {
+    /**
+     * The robot's three songs, in the order its own list holds them.
+     *
+     * The values ARE the wire numbers, and they are written out explicitly so that reordering
+     * this list only moves the entries in the dropdown — the names stay attached to their numbers.
+     * That is the same end r300.Emoji reaches with a switch (see emojiName): a name lookup indexed
+     * by position is what silently sends the wrong one the first time somebody reorders a list.
+     *
+     * ⚠️ The order itself is the ROBOT's, not ours. Two songs swapping places on the robot makes
+     * every saved program play the other one, and nothing anywhere would report it.
+     */
+    export enum Song {
+        //% block="ActiveSummer"
+        ActiveSummer = 0,
+        //% block="CosmicFluff"
+        CosmicFluff = 1,
+        //% block="Fever"
+        Fever = 2,
+    }
+
+    /**
+     * Play one of R300's three songs by name.
+     *
+     * ⚠️ MUSIC ONLY: R300 does not drive its own wheels or hands while a song plays, so this is
+     * not a routine — move the robot yourself with the movement and hand blocks and the two run
+     * together. That is the whole point of the block.
+     *
+     * ⚠️ Nothing reports that the song ended, and there is no block to ask. A song plays to the
+     * end unless something interrupts it, so chaining two means timing the gap yourself, and a
+     * song cut short (the boot button, R300's own stop_dance, the model starting a dance) is
+     * silent. ⚠️ While the music plays R300 mutes its own mic, so the robot cannot hear anyone —
+     * including its wake word — until the song is over.
+     *
+     * There is no answer to read here either. R300 can refuse this (a song is already playing —
+     * it never replaces one — or the robot is busy with start-up, WiFi setup or charging), and
+     * that refusal has nowhere to appear in a void block. If no music starts, let the robot settle
+     * and press it again.
+     */
+    //% blockId=r300_music_play block="play song %song"
+    //% weight=100
+    export function playSong(song: Song): void {
+        r300.song(song)
     }
 }
 

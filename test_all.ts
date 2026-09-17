@@ -1,4 +1,4 @@
-// test_all.ts — bench sweep over EVERY block the R300 extension publishes (25 of them, 39 steps).
+// test_all.ts — bench sweep over EVERY block the R300 extension publishes (26 of them, 40 steps).
 //
 // Copy this whole file into a MakeCode micro:bit project that has the R300 extension added and
 // switch to the Blocks view: every call below is one of the blocks a student can drag out, so
@@ -24,8 +24,9 @@
 //
 // SIDE EFFECTS: the recording section leaves a routine on the robot, REPLACING whatever
 // mcp_microbit_1 held before; the conversation steps open a conversation with the AI and then
-// try to close it again; talk-over is left ENABLED (step 27 has the last word on it); and the
-// robot is left stopped, at volume 50, face happy.
+// try to close it again; talk-over is left ENABLED (step 27 has the last word on it); the music
+// step leaves a song playing, which mutes the robot's own mic until it ends; and the robot is
+// left stopped, at volume 50, face happy.
 //
 // Not part of a student's project: it only ever lives in pxt.json's testFiles. Do not hold A
 // while resetting to run it — that is the USB-serial escape hatch, it skips the serial redirect,
@@ -68,12 +69,13 @@
 //   34  moves recorded > 0                R300 reports the take in a SECOND message
 //   35  routine was cut short?            three moves is nowhere near the 64-step ceiling
 //   36  a 64-character description        refused locally — accepted? must go false
-//   37  end the AI conversation           deterministic from the closed state
-//   38  start an AI conversation          leaves it OPEN; see the note at the step
-//   39  stop driving now                  park the robot
+//   37  play song ActiveSummer            music only — the robot does not drive itself
+//   38  end the AI conversation           deterministic from the closed state
+//   39  start an AI conversation          leaves it OPEN; see the note at the step
+//   40  stop driving now                  park the robot
 
 // ---------------------------------------------------------------------------
-// Steps 6-37 each assert the one thing a bench can see for itself: that R300 took the request.
+// Steps 6-40 each assert the one thing a bench can see for itself: that R300 took the request.
 // That is what "the last command was accepted" means, and it is the block a lesson uses to put a
 // robot fact inside an if. The one refusal that can be produced on demand is step 36; the other
 // way accepted? goes false — a second command landing while a request is still waiting for its
@@ -267,19 +269,28 @@ function sweep(): void {
     r300_ai.nameRecording("this description is definitely longer than thirty-two characters")
     check(!r300_status.accepted())                           // 36
 
-    // 37,38 — the AI conversation pair. Close FIRST: from the closed state the close is
+    // 37 — the song. ONE step, never a chain: a second song_set while one is playing is REFUSED
+    //      (a song is never replaced), so a second call here would fail by design rather than
+    //      prove anything about the block. It runs at this point because it is the last one where
+    //      the robot is certainly idle with no conversation open — a song has no completion
+    //      signal, so nothing can wait it out before the steps that follow. It is LEFT PLAYING,
+    //      and the robot's mic stays muted until it ends; see the side effects at the top.
+    r300_music.playSong(r300_music.Song.ActiveSummer)
+    check(r300_status.accepted())                            // 37
+
+    // 38,39 — the AI conversation pair. Close FIRST: from the closed state the close is
     //         deterministic (R300 answers ok and changes nothing), while a close issued after a
     //         start can be REFUSED once the robot has begun speaking its greeting — it will not
     //         cut off its own reply. So the pair is closed-then-opened, and the sweep leaves the
     //         conversation open; the courtesy close further down is best effort.
     r300_ai.stopConversation()
-    check(r300_status.accepted())                            // 37
-    r300_ai.startConversation()
     check(r300_status.accepted())                            // 38
-
-    // 39 — park it.
-    r300_movement.stop()
+    r300_ai.startConversation()
     check(r300_status.accepted())                            // 39
+
+    // 40 — park it.
+    r300_movement.stop()
+    check(r300_status.accepted())                            // 40
     r300_emotion.showFace(r300.Emoji.Happy)
     r300_hands.bothHands(r300_hands.HandPose.Down)
     // Best effort, and never checked: see the note above. If the robot is still listening, its own
