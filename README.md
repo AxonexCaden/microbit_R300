@@ -8,7 +8,7 @@ The extension opens the link by itself when the micro:bit powers up: there is no
 connect block and nothing to switch on. You need a micro:bit V2 and an R300 EDU
 robot.
 
-**Updated:** 2026-09-16
+**Updated:** 2026-09-17
 
 ---
 
@@ -82,7 +82,7 @@ These have no blocks — use the **JavaScript** tab:
 | `r300.ai(on)` | Conversation with the AI on/off — absolute; the boot button's other half |
 | `r300.volume(v)` | Volume, 0–100 |
 | `r300.song(ix)` | Play one of the three songs, 0–2; needs a robot built with the feature |
-| `r300.describe(name, desc)` | Name and describe a recording before taking it |
+| `r300.describe(name, desc)` | Name (1–24 chars of `[a-z0-9_]`) and describe a recording before taking it |
 | `r300.takeStart()` / `r300.takeFinish()` | Start / finish a recording |
 | `r300.send(op, pJson)` | Send any operation directly |
 
@@ -203,9 +203,12 @@ speed and a duration. All three keys are required.
 robot follows with its own `vol_done` request once the level has really landed.
 
 **9.7 `mcp_desc` / `mcp_take` / `mcp_done`** — recording. Describe a routine
-with `{"name":…,"desc":…}` — a description longer than 34 characters is sent in
-pieces, and the same name appends. Start and finish with
-`{"state":"start"｜"finish"}`. The robot reports the finished tool with
+with `{"name":…,"desc":…}` — the name is 1–24 characters of `[a-z0-9_]`, a
+description longer than 34 characters is sent in pieces, and the same name
+appends. Start and finish with `{"state":"start"｜"finish"}`. A take captures
+arm and leg moves, any song the program started, and the faces it showed — the
+robot replays all of them by itself when the tool runs; the micro:bit takes no
+part in a replay. The robot reports the finished tool with
 `{"name":…,"steps":N,"drop":M}` — `drop` counts steps lost past the 64-step
 ceiling.
 

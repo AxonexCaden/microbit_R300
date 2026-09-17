@@ -42,6 +42,10 @@ namespace r300 {
     // (README.md 9.7). Sentence-sized on purpose -- fitting one 253-byte line is no
     // longer what sets it.
     const kMaxDescChars = 34
+    // Longest recording NAME: it becomes part of the AI's tool name on R300 (README.md 9.7).
+    // Keep in lockstep with R300's kMaxName -- the same name must be answered the same way
+    // whether or not the link is up.
+    const kMaxNameChars = 24
     // How long stopNow() gives a request to abandon itself before it gives up on it. The
     // give-up path is only reached by a sender wedged somewhere other than its wait loop.
     const kStopWaitMs = 300
@@ -199,8 +203,8 @@ namespace r300 {
 
     /**
      * Name the routine you are about to record, and say what it does. Call it BEFORE takeStart().
-     * The name must be 1-16 characters of a-z, 0-9 or _ — it becomes part of the AI's tool name,
-     * so no spaces and no capitals.
+     * The name must be 1-24 characters of a-z, 0-9 or _ — it becomes part of the AI's tool name
+     * (R300's kMaxName), so no spaces and no capitals.
      * Calling it again with the SAME name APPENDS to the description, which is how a description
      * longer than one line gets sent: pass at most kMaxDescChars (34) characters at a time.
      */
@@ -211,9 +215,10 @@ namespace r300 {
         // Caught here rather than left to send(), because "long" is the one failure a student can
         // actually fix — by splitting the description across several describe() calls.
         if (desc.length > kMaxDescChars) return keepReply("long")
-        // The name becomes part of a tool name on R300, so its rule ([a-z0-9_], 1-16 chars)
-        // is enforced here too — same answer whether or not the link is up.
-        if (!isToken(name)) return keepReply("badarg")
+        // The name becomes part of a tool name on R300, so its rule ([a-z0-9_], 1-24 chars,
+        // lockstep with R300's kMaxName) is enforced here too — same answer whether or not
+        // the link is up.
+        if (!isToken(name, kMaxNameChars)) return keepReply("badarg")
         return send("mcp_desc", "{\"name\":\"" + name + "\",\"desc\":\"" + desc + "\"}")
     }
 

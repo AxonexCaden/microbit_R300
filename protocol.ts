@@ -106,9 +106,11 @@ namespace r300 {
         return line.length <= MAX_LINE_BYTES ? line : ""
     }
 
-    // op and tool names are echoed back into JSON, so neither may need escaping.
-    export function isToken(s: string): boolean {
-        if (s.length == 0 || s.length > 16) return false
+    // op and tool names are echoed back into JSON, so neither may need escaping. Ops keep
+    // their 16-char protocol cap (README.md 6 / 7); a recording NAME passes its own cap,
+    // which must stay in lockstep with R300's kMaxName.
+    export function isToken(s: string, maxLen: number = 16): boolean {
+        if (s.length == 0 || s.length > maxLen) return false
         for (let i = 0; i < s.length; i++) {
             const c = s.charCodeAt(i)
             if (!((c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95)) return false
