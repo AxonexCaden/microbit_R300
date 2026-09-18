@@ -117,7 +117,7 @@ if (r300_status.accepted()) {
 led.toggle(0, 0)
 basic.pause(1000)
 // 21 — recording: describe the routine...
-r300_ai.nameRecording("bench test routine")
+r300_ai.nameRecording("green tea")
 led.toggle(0, 0)
 basic.pause(1000)
 // 22 — ...arm the recorder...
