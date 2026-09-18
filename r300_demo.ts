@@ -1,15 +1,16 @@
 // r300_demo.ts — the dance demo. Press A and one whole routine runs, with ActiveSummer
-// playing while it moves. Press B and the same routine is recorded as an AI tool named
-// active_summer_dance — after that you can say "active summer dance" to the robot and it
-// replays the whole thing: music, faces and moves.
+// playing while it moves. Press B and the same routine is recorded as an AI tool — after
+// that you can say "active summer dance" to the robot and it replays the whole thing:
+// music, faces and moves.
 //
 // Every step is one action — a bounce, a turn, the hands, a face — never two at once.
 //
-// A uses student-facing blocks only, like test_2.ts and test_emotion.ts: switch to Blocks
-// and every call turns into the same block a student would drag out of the R300 categories.
-// B additionally uses the hidden recording calls (r300.describe / takeStart / takeFinish):
-// the student-facing recording blocks fix the tool name to mcp_microbit_1, and this demo
-// wants the name to be exactly active_summer_dance, so it calls the hidden trio directly.
+// Both buttons use student-facing blocks only, like test_2.ts and test_emotion.ts: switch to
+// Blocks and every call turns into the same block a student would drag out of the R300
+// categories. Recording rides four R300 AI blocks — "describe this routine as ...",
+// "start recording moves", "finish recording as an AI tool" and "moves recorded" — and they
+// publish the tool under one fixed name, mcp_microbit_1. The description is what the voice AI
+// reads, so it is the words "active summer dance" in there that still trigger the replay.
 //
 // The routine rides the song. ActiveSummer is 16.3 s at ~86 BPM, so one beat is ~700 ms:
 // a 600 ms drive() plus a 100 ms pause lands on it. Three bounce pairs, the turn where the
@@ -103,24 +104,23 @@ input.onButtonPressed(Button.A, function () {
     }
 })
 
-// B — one press records the same dance as an AI tool named active_summer_dance. After that
-// you can say "active summer dance" and the robot replays the routine by itself. The trio
-// below is the hidden recording API — the student-facing recording block fixes the tool name
-// to mcp_microbit_1, and this demo wants the name itself (see the header).
+// B — one press records the same dance as an AI tool. After that you can say "active summer
+// dance" and the robot replays the routine by itself: the description sent below is what the
+// voice AI reads when it decides to replay.
 input.onButtonPressed(Button.B, function () {
     if (!dancing) {
         dancing = true
         stopped = false
 
-        r300.describe("active_summer_dance", "does the active summer dance")
-        r300.takeStart()
+        r300_ai.nameRecording("does the active summer dance")
+        r300_ai.startRecording()
         performDance()
-        r300.takeFinish()
+        r300_ai.finishRecording()
 
         // The step count arrives in a separate mcp_done message just after the take commits;
-        // this pause lets it land before showing it. The routine is 26 steps.
+        // this pause lets it land before "moves recorded" reads it. The routine is 26 steps.
         basic.pause(500)
-        basic.showNumber(r300.lastTakeSteps)
+        basic.showNumber(r300_ai.movesRecorded())
         basic.pause(1500)
         basic.clearScreen()
 
