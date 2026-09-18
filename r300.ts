@@ -471,7 +471,7 @@ namespace r300 {
 // already clamp typed values in the IDE, but a value computed in JavaScript never met one.
 // ---------------------------------------------------------------------------
 
-//% color="#E67E22" icon="\uf085" weight=95 block="R300 Movement"
+//% color="#E67E22" icon="\uf085" block="R300 Movement"
 //% groups="['Drive Control', 'Turn Control', 'Stop Control', 'Custom Control']"
 namespace r300_movement {
     // Fixed speeds, as percent of full speed. Deliberately not fields: the block a student
@@ -590,7 +590,7 @@ namespace r300_movement {
     }
 }
 
-//% color="#E67E22" icon="\uf256" weight=94 block="R300 Hands"
+//% color="#E67E22" icon="\uf256" block="R300 Hands"
 //% groups="['Hand Control', 'Custom Control']"
 namespace r300_hands {
     /**
@@ -665,7 +665,7 @@ namespace r300_hands {
     }
 }
 
-//% color="#E67E22" icon="\uf118" weight=93 block="R300 Emotion"
+//% color="#E67E22" icon="\uf118" block="R300 Emotion"
 //% groups="['Emotion Control']"
 namespace r300_emotion {
     /**
@@ -680,7 +680,7 @@ namespace r300_emotion {
     }
 }
 
-//% color="#E67E22" icon="\uf028" weight=92 block="R300 Speaker"
+//% color="#E67E22" icon="\uf028" block="R300 Speaker"
 //% groups="['Audio Actions', 'Speaker Status']"
 namespace r300_speaker {
     /**
@@ -735,7 +735,7 @@ namespace r300_speaker {
     }
 }
 
-//% color="#E67E22" icon="\uf130" weight=90 block="R300 Talk Over"
+//% color="#E67E22" icon="\uf130" block="R300 Talk Over"
 //% groups="['Talk Over']"
 namespace r300_talkover {
     /**
@@ -768,7 +768,7 @@ namespace r300_talkover {
 // One category for everything that talks to the robot's AI. The conversation pair comes first
 // (that is where a lesson starts) and the recording flow follows it; they were two namespaces —
 // and so two toolbox drawers with confusingly similar names — until they were merged here.
-//% color="#E67E22" icon="\uf0d0" weight=91 block="R300 AI"
+//% color="#E67E22" icon="\uf0d0" block="R300 AI"
 //% groups="['Conversation', 'MCP Setup']"
 namespace r300_ai {
     /**
@@ -902,7 +902,7 @@ namespace r300_ai {
     }
 }
 
-//% color="#E67E22" icon="\uf059" weight=89 block="R300 Status"
+//% color="#E67E22" icon="\uf059" block="R300 Status"
 //% groups="['Status Inquiry']"
 namespace r300_status {
     /**
@@ -940,7 +940,7 @@ namespace r300_status {
     }
 }
 
-//% color="#E67E22" icon="\uf001" weight=88 block="R300 Music"
+//% color="#E67E22" icon="\uf001" block="R300 Music"
 //% groups="['Songs']"
 namespace r300_music {
     /**
