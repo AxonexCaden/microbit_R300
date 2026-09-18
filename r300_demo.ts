@@ -35,7 +35,7 @@ let stopped = false
 // Wait for the handshake before the buttons do anything: R300 ignores the link for about
 // ten seconds after power-up, and a request sent before that is answered as a failure.
 while (!r300_status.isConnected()) {
-    basic.showIcon(IconNames.Asleep)
+    basic.showIcon(IconNames.No)
     basic.pause(200)
 }
 basic.clearScreen()
