@@ -47,12 +47,12 @@ Two things that surprise people:
 
 ## What you can control
 
-Eight groups in the toolbox:
+Eight categories in the toolbox, each split into labelled groups:
 
 | Group | What it does |
 |---|---|
-| **R300 Movement** | Forward or backward for 1–3 seconds, turn left/right on the spot, stop driving now — plus `drive rot fwd for ms` under **More**, the full manual control |
-| **R300 Hands** | Either hand, or both, to `up` (0°), `down` (90°) or `back` (180°) — plus both angles by hand under **More** |
+| **R300 Movement** | Forward or backward for 1–3 seconds, turn left/right on the spot, stop driving now — plus `drive rot fwd for ms` under **Custom Control**, the full manual control |
+| **R300 Hands** | Either hand, or both, to `up` (0°), `down` (90°) or `back` (180°) — plus both angles by hand under **Custom Control** |
 | **R300 Emotion** | One of 19 faces on the robot's eyes; the face stays until you change it |
 | **R300 Speaker** | `set speaker volume to` / `change speaker volume by` / read `speaker volume` — the same set, change, read shape Music gives tempo |
 | **R300 AI** | Talk to the robot's AI: `start` / `end an AI conversation` (what its own boot button does), and describe + record a routine so the robot replays it on a voice command. `moves recorded` and `routine was cut short?` report what the last take captured |
