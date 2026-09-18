@@ -592,19 +592,19 @@ namespace r300_hands {
     /**
      * Where a hand can point — the dropdown offers exactly these three.
      *
-     * The angles follow pxt-axonex_test's HandPosition: up = 180°, down = 90°, back = 0°.
-     * Confirmed 2026-09-15: up (180°) is the RAISED pose, and that is what test_mcp_high_five.ts's
-     * high five offers with. ⚠️ README.md 9.5 describes the same wire range in other words
-     * (0 = pointing forward, 90 = down, 180 = back) — two sets of names for the same numbers,
-     * so do not read one back onto the other.
+     * The angles: up = 0°, down = 90°, back = 180°. ⚠️ Revised 2026-09-18 — the first cut of
+     * this block had up and back the other way round (up = 180°, back = 0°). test.ts's
+     * performHighFive() has always offered the high five with 0° (kHandsForward, "arms up"),
+     * and README.md 9.5 orders the wire range the same way (0 = forward, 90 = down,
+     * 180 = backward): the dropdown was the one place speaking the other dialect.
      */
     export enum HandPose {
         //% block="up"
-        Up = 180,
+        Up = 0,
         //% block="down"
         Down = 90,
         //% block="back"
-        Back = 0,
+        Back = 180,
     }
 
     /**
