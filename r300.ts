@@ -736,7 +736,7 @@ namespace r300_speaker {
 }
 
 //% color="#E67E22" icon="\uf130" block="R300 Talk Over"
-//% groups="['Talk Over']"
+//% groups="['Talk Over On', 'Talk Over Off']"
 namespace r300_talkover {
     /**
      * Let the user interrupt R300 by talking while it is speaking: it stops the reply and
@@ -748,7 +748,7 @@ namespace r300_talkover {
      */
     //% blockId=r300_talkover_allow block="allow talking over R300's reply"
     //% weight=100
-    //% group="Talk Over"
+    //% group="Talk Over On"
     export function allowTalkingOver(): void {
         r300.aec(true)
     }
@@ -759,7 +759,7 @@ namespace r300_talkover {
      */
     //% blockId=r300_talkover_stop block="don't allow talking over R300's reply"
     //% weight=90
-    //% group="Talk Over"
+    //% group="Talk Over Off"
     export function stopTalkingOver(): void {
         r300.aec(false)
     }
@@ -903,7 +903,7 @@ namespace r300_ai {
 }
 
 //% color="#E67E22" icon="\uf059" block="R300 Status"
-//% groups="['Status Inquiry']"
+//% groups="['Link Status', 'Command Status']"
 namespace r300_status {
     /**
      * Is the link up? True from the moment R300 has handshaked with this micro:bit and answered
@@ -915,7 +915,7 @@ namespace r300_status {
      */
     //% blockId=r300_status_connected block="R300 is connected"
     //% weight=100
-    //% group="Status Inquiry"
+    //% group="Link Status"
     export function isConnected(): boolean {
         // liveCount is reset by every new session (an R300 restart, or a hello arriving after
         // the live check gave up), so > 0 answers "up in THIS session" rather than "has been up
@@ -934,7 +934,7 @@ namespace r300_status {
      */
     //% blockId=r300_status_accepted block="the last command was accepted"
     //% weight=90
-    //% group="Status Inquiry"
+    //% group="Command Status"
     export function accepted(): boolean {
         return r300.lastReply == "ok"
     }
