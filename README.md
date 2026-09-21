@@ -47,7 +47,7 @@ Two things that surprise people:
 
 ## What you can control
 
-Eight groups in the toolbox:
+Nine groups in the toolbox:
 
 | Group | What it does |
 |---|---|
@@ -59,6 +59,7 @@ Eight groups in the toolbox:
 | **R300 Talk Over** | Allow, or stop, talking over the robot's reply — two absolute states, never a toggle |
 | **R300 Status** | `R300 is connected` and `the last command was accepted` — the two values a program can put in a variable or test in an `if` |
 | **R300 Music** | `play song` — one of the robot's three songs, by name. Music only: the robot does not drive itself while a song plays, and it stops hearing you until the song ends |
+| **R300 Camera** | `take a photo and ask` — one photo goes to the robot's vision model with your question. Needs an AI conversation already open, and nothing comes back to your program |
 
 Two groups in one program:
 
@@ -82,6 +83,7 @@ These have no blocks — use the **JavaScript** tab:
 | `r300.ai(on)` | Conversation with the AI on/off — absolute; the boot button's other half |
 | `r300.volume(v)` | Volume, 0–100 |
 | `r300.song(ix)` | Play one of the three songs, 0–2; needs a robot built with the feature |
+| `r300.cam(q)` | Ask the robot's vision model about a photo; `q` optional, and needs an AI conversation already open |
 | `r300.describe(name, desc)` | Name (1–24 chars of `[a-z0-9_]`) and describe a recording before taking it |
 | `r300.takeStart()` / `r300.takeFinish()` | Start / finish a recording |
 | `r300.send(op, pJson)` | Send any operation directly |
@@ -317,6 +319,72 @@ Test vectors, each checked against the rule in (7 #4):
 the two stack — and 62 is 3 beyond 61 for the same reason. 64 is the odd one at
 +73: `"1"` is three bytes where the bare `0` was one, and the two quote
 characters are what the gap is made of.
+
+**9.11 `cam_set`** — `{"q":"…"}`, or `{}`. Take a photo and put it to the robot's
+vision model with a question. `q` is optional: leave it out and the robot asks
+its own, which is why an empty question goes out as `{}` rather than `{"q":""}` —
+a literal empty `q` is refused.
+
+```
+{"s":"mb","id":70,"t":"r","op":"cam_set","p":{},"ck":105}
+{"s":"mb","id":71,"t":"r","op":"cam_set","p":{"q":"What do you see?"},"ck":61}
+{"s":"mb","id":72,"t":"r","op":"cam_set","p":{"q":""},"ck":158}
+{"s":"mb","id":73,"t":"r","op":"cam_set","p":{"q":7},"ck":146}
+{"s":"mb","id":74,"t":"r","op":"cam_set","p":{"q":"hi"},"ck":113}
+```
+
+R300 answers `ok` — accepted, not done — or `badarg`. There is no second reply
+after the ack, and nothing later reports that the photo was taken or what the
+model said about it.
+
+⚠️ **It needs an open AI conversation.** The vision endpoint's address reaches
+R300 from the server during the MCP handshake, so only a conversation that
+actually opened has one: press the robot's boot button, or run `start an AI
+conversation` (9.9) first. Nothing on this side can check it — the boot button
+changes the state without the micro:bit being told, and `ok` means accepted
+rather than applied — and the two states are otherwise indistinguishable,
+because a request on a robot with no conversation still answers `ok` and then
+fails in R300's own log alone.
+
+⚠️ **Nothing comes back.** Not the answer, not even a note that the photo was
+taken: R300 speaks the answer and keeps it to itself. There is no ask-and-wait
+shape to build on this op.
+
+⚠️ **The work takes about 9 seconds** — 20 in the worst case — and the photo
+stays on the robot's screen for about 5 of them. The wheels and hands keep
+working the whole time, because those go straight to the motor board and are
+never queued; a face or a song change is queued behind the photo instead, and
+lands when it finishes, up to 9 seconds late.
+
+⚠️ Keep the question to **ASCII**, like every other payload (2). The block
+escapes `"`, `\` and control characters for you, but a question in Chinese, or
+with an accent in it, is not covered by the vectors below and has not been on the
+bench.
+
+`badarg` covers a malformed payload, a `q` that is present but not a usable
+string, a unit with no camera, limited-charging mode, **and a vision call already
+in flight** — a program cannot tell those apart. A refusal is cached against
+`(id, op)` (7 #4), so a retry needs a **new id** — which is what the extension's
+sender gives every request anyway.
+
+`noop` means that robot's firmware predates this op — the same lesson as
+`ai_set`.
+
+Test vectors, each checked against the rule in (7 #4):
+
+| Request | Answer |
+|---|---|
+| `{"s":"mb","id":70,"t":"r","op":"cam_set","p":{},"ck":105}` | `ok` — the robot's own question |
+| `{"s":"mb","id":71,"t":"r","op":"cam_set","p":{"q":"What do you see?"},"ck":61}` | `ok` |
+| `{"s":"mb","id":72,"t":"r","op":"cam_set","p":{"q":""},"ck":158}` | `badarg` — `q` present but empty |
+| `{"s":"mb","id":73,"t":"r","op":"cam_set","p":{"q":7},"ck":146}` | `badarg` — `q` is a number |
+| `{"s":"mb","id":74,"t":"r","op":"cam_set","p":{"q":"hi"},"ck":113}` | `ok` — a new id, so not the cached refusal |
+
+The ids here are consecutive but the questions are not, so the `ck` column has no
+pattern to read the way 9.9's and 9.10's do. 70 → 71 is +212 because the id rises
+by 1 and the question's 22 characters add 1747, and 1748 wraps to 212. Check a
+vector against its own line — the sum of every byte up to `,"ck":` — rather than
+against its neighbour.
 
 ### 10. Timing summary
 
