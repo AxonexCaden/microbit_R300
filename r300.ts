@@ -492,19 +492,18 @@ namespace r300 {
 // The r300.* blocks above are hidden from the toolbox (blockHidden in their annotations),
 // so this is everything a student sees; r300 itself stays callable from TypeScript.
 //
-// The toolbox layout is deliberately flat: one namespace per category, weights ordering the
-// blocks inside it, and group labels ONLY where they earn their keep — so the main list carries
-// no label, because a label over a single block is noise. `others` is the reserved name for
-// that unlabelled list and it is listed FIRST on purpose: the groups array is also the order the
-// groups appear in the flyout. Each action category ends with its "More" group, which is where
-// the two manual-control blocks live — out of a beginner's way, but still in the toolbox.
+// The toolbox layout follows pxt-axonex_test's: one namespace per category, and every category
+// split into labelled groups. The everyday blocks come first; the raw manual controls sit in a
+// "Custom Control" group at the END of Movement and Hands — out of a beginner's way, but still
+// in the toolbox. The groups array is also the order the groups appear in the flyout, and the
+// weights order the blocks inside one group.
 //
 // Every numeric input is rounded and clamped before the request is built — the block fields
 // already clamp typed values in the IDE, but a value computed in JavaScript never met one.
 // ---------------------------------------------------------------------------
 
-//% color="#E67E22" icon="\uf085" weight=95 block="R300 Movement"
-//% groups="['others', 'More']"
+//% color="#E67E22" icon="\uf085" block="R300 Movement"
+//% groups="['Drive Control', 'Turn Control', 'Stop Control', 'Custom Control']"
 namespace r300_movement {
     // Fixed speeds, as percent of full speed. Deliberately not fields: the block a student
     // picks says WHICH WAY, and how long is the only thing worth tuning in a lesson.
@@ -523,6 +522,7 @@ namespace r300_movement {
     //% blockId=r300_movement_forward block="move forward for %seconds seconds"
     //% seconds.min=1 seconds.max=3 seconds.defl=1
     //% weight=100
+    //% group="Drive Control"
     export function moveForward(seconds: number): void {
         driveStraight(MOVE_SPEED, seconds)
     }
@@ -533,6 +533,7 @@ namespace r300_movement {
     //% blockId=r300_movement_backward block="move backward for %seconds seconds"
     //% seconds.min=1 seconds.max=3 seconds.defl=1
     //% weight=90
+    //% group="Drive Control"
     export function moveBackward(seconds: number): void {
         driveStraight(-MOVE_SPEED, seconds)
     }
@@ -544,6 +545,7 @@ namespace r300_movement {
      */
     //% blockId=r300_movement_left block="move left"
     //% weight=80
+    //% group="Turn Control"
     export function moveLeft(): void {
         turn(-TURN_SPEED)
     }
@@ -553,6 +555,7 @@ namespace r300_movement {
      */
     //% blockId=r300_movement_right block="move right"
     //% weight=70
+    //% group="Turn Control"
     export function moveRight(): void {
         turn(TURN_SPEED)
     }
@@ -563,6 +566,7 @@ namespace r300_movement {
      */
     //% blockId=r300_movement_stop block="stop driving now"
     //% weight=60
+    //% group="Stop Control"
     export function stop(): void {
         r300.stopNow()
     }
@@ -579,7 +583,7 @@ namespace r300_movement {
     //% fwd.min=-100 fwd.max=100 fwd.defl=50
     //% ms.min=0 ms.max=3000 ms.defl=1000
     //% weight=10
-    //% group="More"
+    //% group="Custom Control"
     export function drive(rot: number, fwd: number, ms: number): void {
         // Round first, then clamp: the clamp must be the LAST step, or rounding a boundary
         // value could push it back out of range. Keep these bounds in step with the //% values.
@@ -617,25 +621,25 @@ namespace r300_movement {
     }
 }
 
-//% color="#E67E22" icon="\uf256" weight=94 block="R300 Hands"
-//% groups="['others', 'More']"
+//% color="#E67E22" icon="\uf256" block="R300 Hands"
+//% groups="['Hand Control', 'Custom Control']"
 namespace r300_hands {
     /**
      * Where a hand can point — the dropdown offers exactly these three.
      *
-     * The angles follow pxt-axonex_test's HandPosition: up = 180°, down = 90°, back = 0°.
-     * Confirmed 2026-09-15: up (180°) is the RAISED pose, and that is what test_mcp_high_five.ts's
-     * high five offers with. ⚠️ README.md 9.5 describes the same wire range in other words
-     * (0 = pointing forward, 90 = down, 180 = back) — two sets of names for the same numbers,
-     * so do not read one back onto the other.
+     * The angles: up = 0°, down = 90°, back = 180°. ⚠️ Revised 2026-09-18 — the first cut of
+     * this block had up and back the other way round (up = 180°, back = 0°). test.ts's
+     * performHighFive() has always offered the high five with 0° (kHandsForward, "arms up"),
+     * and README.md 9.5 orders the wire range the same way (0 = forward, 90 = down,
+     * 180 = backward): the dropdown was the one place speaking the other dialect.
      */
     export enum HandPose {
         //% block="up"
-        Up = 180,
+        Up = 0,
         //% block="down"
         Down = 90,
         //% block="back"
-        Back = 0,
+        Back = 180,
     }
 
     /**
@@ -645,6 +649,7 @@ namespace r300_hands {
      */
     //% blockId=r300_hands_left block="move left hand %pose"
     //% weight=100
+    //% group="Hand Control"
     export function leftHand(pose: HandPose): void {
         // a1 = right hand, so the hand this block means is a2.
         r300.arm(-1, pose)
@@ -655,6 +660,7 @@ namespace r300_hands {
      */
     //% blockId=r300_hands_right block="move right hand %pose"
     //% weight=90
+    //% group="Hand Control"
     export function rightHand(pose: HandPose): void {
         r300.arm(pose, -1)
     }
@@ -665,6 +671,7 @@ namespace r300_hands {
      */
     //% blockId=r300_hands_both block="move both hands %pose"
     //% weight=80
+    //% group="Hand Control"
     export function bothHands(pose: HandPose): void {
         r300.arm(pose, pose)
     }
@@ -680,7 +687,7 @@ namespace r300_hands {
     //% a1.min=-1 a1.max=180 a1.defl=90
     //% a2.min=-1 a2.max=180 a2.defl=90
     //% weight=10
-    //% group="More"
+    //% group="Custom Control"
     export function moveHands(a1: number, a2: number): void {
         // -1 (leave the hand alone) is the floor, so clamping can never turn "skip" into a move.
         a1 = r300.clamp(Math.round(a1), -1, 180)
@@ -689,7 +696,8 @@ namespace r300_hands {
     }
 }
 
-//% color="#E67E22" icon="\uf118" weight=93 block="R300 Emotion"
+//% color="#E67E22" icon="\uf118" block="R300 Emotion"
+//% groups="['Emotion Control']"
 namespace r300_emotion {
     /**
      * Show a face on R300's monitor (the eyes). The face stays until something else
@@ -697,12 +705,14 @@ namespace r300_emotion {
      */
     //% blockId=r300_emotion_show block="show face %e"
     //% weight=100
+    //% group="Emotion Control"
     export function showFace(e: r300.Emoji): void {
         r300.emoji(e)
     }
 }
 
-//% color="#E67E22" icon="\uf028" weight=92 block="R300 Speaker"
+//% color="#E67E22" icon="\uf028" block="R300 Speaker"
+//% groups="['Audio Actions', 'Speaker Status']"
 namespace r300_speaker {
     /**
      * Set the speaker volume, 0..100.
@@ -710,6 +720,7 @@ namespace r300_speaker {
     //% blockId=r300_speaker_volume block="set speaker volume to %v"
     //% v.min=0 v.max=100 v.defl=50
     //% weight=100
+    //% group="Audio Actions"
     export function setVolume(v: number): void {
         v = r300.clamp(Math.round(v), 0, 100)
         r300.volume(v)
@@ -723,6 +734,7 @@ namespace r300_speaker {
     //% blockId=r300_speaker_change block="change speaker volume by %v"
     //% v.min=-100 v.max=100 v.defl=10
     //% weight=90
+    //% group="Audio Actions"
     export function changeVolumeBy(v: number): void {
         // Round and clamp the step first, then let setVolume clamp the total — the order every
         // other wrapper here uses, so a computed value meets the same bounds a typed one does.
@@ -741,6 +753,7 @@ namespace r300_speaker {
      */
     //% blockId=r300_speaker_volume_now block="speaker volume"
     //% weight=80
+    //% group="Speaker Status"
     export function volume(): number {
         return speakerVolumeNow()
     }
@@ -753,7 +766,8 @@ namespace r300_speaker {
     }
 }
 
-//% color="#E67E22" icon="\uf130" weight=90 block="R300 Talk Over"
+//% color="#E67E22" icon="\uf130" block="R300 Talk Over"
+//% groups="['Talk Over On', 'Talk Over Off']"
 namespace r300_talkover {
     /**
      * Let the user interrupt R300 by talking while it is speaking: it stops the reply and
@@ -765,6 +779,7 @@ namespace r300_talkover {
      */
     //% blockId=r300_talkover_allow block="allow talking over R300's reply"
     //% weight=100
+    //% group="Talk Over On"
     export function allowTalkingOver(): void {
         r300.aec(true)
     }
@@ -775,6 +790,7 @@ namespace r300_talkover {
      */
     //% blockId=r300_talkover_stop block="don't allow talking over R300's reply"
     //% weight=90
+    //% group="Talk Over Off"
     export function stopTalkingOver(): void {
         r300.aec(false)
     }
@@ -783,7 +799,8 @@ namespace r300_talkover {
 // One category for everything that talks to the robot's AI. The conversation pair comes first
 // (that is where a lesson starts) and the recording flow follows it; they were two namespaces —
 // and so two toolbox drawers with confusingly similar names — until they were merged here.
-//% color="#E67E22" icon="\uf0d0" weight=91 block="R300 AI"
+//% color="#E67E22" icon="\uf0d0" block="R300 AI"
+//% groups="['Conversation', 'MCP Setup']"
 namespace r300_ai {
     /**
      * Start a conversation with the AI — the same thing one press of the robot's boot button
@@ -797,6 +814,7 @@ namespace r300_ai {
      */
     //% blockId=r300_ai_start block="start an AI conversation"
     //% weight=100
+    //% group="Conversation"
     export function startConversation(): void {
         r300.ai(true)
     }
@@ -811,6 +829,7 @@ namespace r300_ai {
      */
     //% blockId=r300_ai_stop block="end the AI conversation"
     //% weight=90
+    //% group="Conversation"
     export function stopConversation(): void {
         r300.ai(false)
     }
@@ -851,6 +870,7 @@ namespace r300_ai {
      */
     //% blockId=r300_mcp_name block="describe this routine as %desc (max 32 chars)"
     //% weight=80
+    //% group="MCP Setup"
     export function nameRecording(desc: string): void {
         if (desc.length > DESC_MAX) {
             refuse(DESC_MAX)
@@ -865,6 +885,7 @@ namespace r300_ai {
      */
     //% blockId=r300_mcp_start block="start recording moves"
     //% weight=70
+    //% group="MCP Setup"
     export function startRecording(): void {
         r300.takeStart()
     }
@@ -874,6 +895,7 @@ namespace r300_ai {
      */
     //% blockId=r300_mcp_finish block="finish recording as an AI tool"
     //% weight=60
+    //% group="MCP Setup"
     export function finishRecording(): void {
         r300.takeFinish()
     }
@@ -887,6 +909,7 @@ namespace r300_ai {
      */
     //% blockId=r300_mcp_steps block="moves recorded"
     //% weight=50
+    //% group="MCP Setup"
     export function movesRecorded(): number {
         // -1 is protocol.ts's "no take has ever been reported", which is not a number a student
         // can do anything with. 0 is the truthful reading: nothing recorded yet.
@@ -904,12 +927,14 @@ namespace r300_ai {
      */
     //% blockId=r300_mcp_cut block="routine was cut short?"
     //% weight=40
+    //% group="MCP Setup"
     export function recordingWasCutShort(): boolean {
         return r300.lastTakeDrop > 0
     }
 }
 
-//% color="#E67E22" icon="\uf059" weight=89 block="R300 Status"
+//% color="#E67E22" icon="\uf059" block="R300 Status"
+//% groups="['Link Status', 'Command Status']"
 namespace r300_status {
     /**
      * Is the link up? True from the moment R300 has handshaked with this micro:bit and answered
@@ -921,6 +946,7 @@ namespace r300_status {
      */
     //% blockId=r300_status_connected block="R300 is connected"
     //% weight=100
+    //% group="Link Status"
     export function isConnected(): boolean {
         // liveCount is reset by every new session (an R300 restart, or a hello arriving after
         // the live check gave up), so > 0 answers "up in THIS session" rather than "has been up
@@ -939,12 +965,14 @@ namespace r300_status {
      */
     //% blockId=r300_status_accepted block="the last command was accepted"
     //% weight=90
+    //% group="Command Status"
     export function accepted(): boolean {
         return r300.lastReply == "ok"
     }
 }
 
-//% color="#E67E22" icon="\uf001" weight=88 block="R300 Music"
+//% color="#E67E22" icon="\uf001" block="R300 Music"
+//% groups="['Songs']"
 namespace r300_music {
     /**
      * The robot's three songs, in the order its own list holds them.
@@ -986,6 +1014,7 @@ namespace r300_music {
      */
     //% blockId=r300_music_play block="play song %song"
     //% weight=100
+    //% group="Songs"
     export function playSong(song: Song): void {
         r300.song(song)
     }
