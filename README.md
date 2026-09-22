@@ -8,7 +8,7 @@ The extension opens the link by itself when the micro:bit powers up: there is no
 connect block and nothing to switch on. You need a micro:bit V2 and an R300 EDU
 robot.
 
-**Updated:** 2026-09-17
+**Updated:** 2026-09-22
 
 ---
 
@@ -436,8 +436,49 @@ This repository is itself a MakeCode extension.
 | `legacy/` | Retired MicroPython version, kept for reference |
 | `built/` | Build output — flash `built/binary.hex` |
 
-Build with `pxt build`, then drag `built/binary.hex` onto the `MICROBIT` drive.
-On this macOS setup, `pxt deploy` is unreliable and copying with `cp` hangs
-without writing — drag in Finder instead.
+### Building and flashing
 
-Developed against pxt-microbit v9.1.1 and pxt-core v13.0.1.
+Two commands, both from the repository root — the folder holding `pxt.json`.
+
+```zsh
+cd path/to/microbit_R300                     # the repo root, holding pxt.json
+pxt build                                    # → built/binary.hex
+cp built/binary.hex /Volumes/MICROBIT/       # or drag the .hex onto the drive
+```
+
+1. **Build.** `pxt build` compiles `files` **and** `testFiles` into one program,
+   so a bench test left in `testFiles` ships inside the hex. Watch the exit code
+   and the size: `error TS9283: program too big by N bytes` means it no longer
+   fits. There is no local `tsc` — `pxt build` is the only thing that catches
+   type errors, VS Code will not.
+2. **Flash.** Plug in the micro:bit until Finder shows the `MICROBIT` drive,
+   then copy the hex over. A successful copy unmounts and remounts the drive:
+   DAPLink reboots the board the moment the last byte lands. If `cp` sits there
+   without writing, stop it and drag `built/binary.hex` in Finder instead.
+
+`pxt deploy` is unreliable on this macOS setup — build by hand and copy the hex.
+
+To build and check the result without reading the log:
+
+```zsh
+pxt build > /tmp/pxt_build.log 2>&1; echo "exit=$?"
+grep -inE "error|too big" /tmp/pxt_build.log
+ls -l built/binary.hex
+```
+
+### Environment
+
+Verified on this machine, 2026-09-22:
+
+| | Version |
+|---|---|
+| macOS | 15.7.7 (arm64) |
+| Node.js | v25.2.1 |
+| npm | 11.6.2 |
+| pxt CLI | `~/.npm-global/bin/pxt` |
+| pxt-microbit | v9.1.1 |
+| pxt-core | v13.0.1 |
+
+`pxt` accepts no `--version` flag, so read the toolchain versions from
+`node_modules/pxt-microbit/package.json` and `node_modules/pxt-core/package.json`
+instead. Developed against pxt-microbit v9.1.1 and pxt-core v13.0.1.
