@@ -435,6 +435,37 @@ namespace r300 {
         return send("song_set", "{\"ix\":" + ix + "}")
     }
 
+    /**
+     * Take a photo and put it to the vision model with a question: what the model does through its
+     * own take-photo tool, except a program starts it and nobody has to speak.
+     * q is optional — leave it out and R300 asks its own default ("What do you see?"), which is why
+     * an empty question is sent as `{}` rather than `{"q":""}`: R300 refuses a literal empty q.
+     * Anything else in q is JSON-escaped first (escapeJson), because a `"` or a `\` in the text
+     * would otherwise break the payload and R300 would drop the line without an ack.
+     * "ok" means accepted, not done — and NOTHING comes back for this op: no answer, no "the photo
+     * finished", no image. R300 speaks the answer and logs it; this side never sees it, so there is
+     * no ask-and-wait shape to build.
+     * ⚠️ It needs an OPEN AI CONVERSATION (ai_set, or the robot's own boot button): the vision
+     * endpoint's URL reaches R300 from the server during the MCP handshake, so only a conversation
+     * that actually opened has it. That cannot be checked from here — the boot button changes the
+     * state behind our back and "ok" means accepted rather than applied, so a flag kept on this
+     * side would be confidently wrong. On a robot that was never connected the op still answers ok
+     * and then fails silently in R300's log.
+     * ⚠️ The ack lands in milliseconds but the work takes ~9 s (~20 s worst case), and the photo
+     * sits on the robot's screen for about 5 s. The wheels and hands keep working throughout —
+     * leg_set/arm_set go straight to the motor board and are never queued — but emo_set and
+     * song_set are queued behind the photo and land when it finishes, up to ~9 s late.
+     * "badarg" covers: no camera on this unit, limited charging mode, a vision call already in
+     * flight, and a q that is present but not a usable string. "noop" means this R300's firmware
+     * predates cam_set.
+     */
+    //% blockId=r300_cam block="take a photo and ask %q"
+    //% blockHidden=true
+    //% weight=91
+    export function cam(q: string): string {
+        return send("cam_set", q.length == 0 ? "{}" : "{\"q\":\"" + escapeJson(q) + "\"}")
+    }
+
     // Clamp a number into an inclusive range. Deliberately NOT a block: it exists for the
     // student-facing wrappers below, whose arguments can come from JavaScript or from
     // arithmetic and therefore never met a block field's min/max. R300 refuses out-of-range
@@ -986,6 +1017,29 @@ namespace r300_music {
     //% group="Songs"
     export function playSong(song: Song): void {
         r300.song(song)
+    }
+}
+
+//% color="#E67E22" icon="\uf030" weight=87 block="R300 Camera"
+namespace r300_camera {
+    /**
+     * Take a photo and send it to R300's vision model with a question. Type the question in the
+     * block, or leave the field alone to let R300 ask its own ("What do you see?").
+     *
+     * ⚠️ The robot has to be in a conversation with its AI first — press its boot button, or use
+     * "start an AI conversation". Without one, this block still reports success and simply does
+     * nothing: R300 mentions it only in its own log, so a program cannot tell.
+     *
+     * ⚠️ Nothing comes back to your program — not the answer, not even a note that the photo was
+     * taken. R300 says the answer out loud and keeps it to itself. Expect it to take about nine
+     * seconds, and note that anything you do to the robot's face or music while it works waits
+     * its turn; the wheels and hands do not wait.
+     */
+    //% blockId=r300_camera_ask block="take a photo and ask %q"
+    //% weight=100
+    //% q.defl="What do you see?"
+    export function takePhoto(q: string): void {
+        r300.cam(q)
     }
 }
 

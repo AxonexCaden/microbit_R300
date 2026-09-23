@@ -1,4 +1,4 @@
-// test_all.ts — bench sweep over EVERY block the R300 extension publishes (26 of them, 40 steps).
+// test_all.ts — bench sweep over EVERY block the R300 extension publishes (27 of them, 41 steps).
 //
 // Copy this whole file into a MakeCode micro:bit project that has the R300 extension added and
 // switch to the Blocks view: every call below is one of the blocks a student can drag out, so
@@ -24,9 +24,10 @@
 //
 // SIDE EFFECTS: the recording section leaves a routine on the robot, REPLACING whatever
 // mcp_microbit_1 held before; the conversation steps open a conversation with the AI and then
-// try to close it again; talk-over is left ENABLED (step 27 has the last word on it); the music
-// step leaves a song playing, which mutes the robot's own mic until it ends; and the robot is
-// left stopped, at volume 50, face happy.
+// try to close it again; the camera step sends a real photo to the robot's vision model and the
+// robot answers it OUT LOUD, which takes about nine seconds; talk-over is left ENABLED (step 27
+// has the last word on it); the music step leaves a song playing, which mutes the robot's own mic
+// until it ends; and the robot is left stopped, at volume 50, face happy.
 //
 // Not part of a student's project: it only ever lives in pxt.json's testFiles. Do not hold A
 // while resetting to run it — that is the USB-serial escape hatch, it skips the serial redirect,
@@ -72,10 +73,12 @@
 //   37  play song ActiveSummer            music only — the robot does not drive itself
 //   38  end the AI conversation           deterministic from the closed state
 //   39  start an AI conversation          leaves it OPEN; see the note at the step
-//   40  stop driving now                  park the robot
+//   40  take a photo and ask              needs the conversation 39 opened; the robot answers
+//                                        out loud, and about nine seconds pass before step 41
+//   41  stop driving now                  park the robot
 
 // ---------------------------------------------------------------------------
-// Steps 6-40 each assert the one thing a bench can see for itself: that R300 took the request.
+// Steps 6-41 each assert the one thing a bench can see for itself: that R300 took the request.
 // That is what "the last command was accepted" means, and it is the block a lesson uses to put a
 // robot fact inside an if. The one refusal that can be produced on demand is step 36; the other
 // way accepted? goes false — a second command landing while a request is still waiting for its
@@ -288,9 +291,22 @@ function sweep(): void {
     r300_ai.startConversation()
     check(r300_status.accepted())                            // 39
 
-    // 40 — park it.
-    r300_movement.stop()
+    // 40 — the photo, and the only step whose dependency the extension cannot check for itself:
+    //      it needs a conversation that actually OPENED, because the vision endpoint's address
+    //      reaches R300 from the server during the handshake. Step 39 just opened one, so this is
+    //      the one place in the sweep where that holds — and the block reports nothing about it.
+    //      The pause is for the handshake rather than the ack: an address that has not arrived
+    //      yet makes the photo pointless, so ask a moment late rather than immediately. If this
+    //      step fails on a robot whose conversation really did open, raise the pause.
+    //      WATCH AND LISTEN: the robot takes about nine seconds over it and answers OUT LOUD.
+    basic.pause(3000)
+    r300_camera.takePhoto("What do you see?")
     check(r300_status.accepted())                            // 40
+
+    // 41 — park it. The stop and the hands land at once; the face change is queued behind step
+    //      40's photo if that is still in flight, and shows up a few seconds late.
+    r300_movement.stop()
+    check(r300_status.accepted())                            // 41
     r300_emotion.showFace(r300.Emoji.Happy)
     r300_hands.bothHands(r300_hands.HandPose.Down)
     // Best effort, and never checked: see the note above. If the robot is still listening, its own

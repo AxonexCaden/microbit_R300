@@ -118,6 +118,30 @@ namespace r300 {
         return true
     }
 
+    // JSON escaping for a payload that carries free text (cam_set's q). A `"` or a `\` in the
+    // text would otherwise end the string early or escape the character after it, and a raw
+    // newline would split the line in two — either way R300 receives a broken line and drops it
+    // with NO ack, so the program reports a timeout for a request that never left, and nothing
+    // anywhere says why. Control characters go out as \uXXXX; everything at or above 0x20 passes
+    // through unchanged (README.md 2).
+    export function escapeJson(s: string): string {
+        let out = ""
+        for (let i = 0; i < s.length; i++) {
+            const c = s.charCodeAt(i)
+            if (c == 34) out += "\\\""
+            else if (c == 92) out += "\\\\"
+            else if (c < 0x20) out += "\\u" + hex4(c)
+            else out += s.charAt(i)
+        }
+        return out
+    }
+
+    function hex4(c: number): string {
+        const d = "0123456789abcdef"
+        return d.charAt((c >> 12) & 15) + d.charAt((c >> 8) & 15) +
+            d.charAt((c >> 4) & 15) + d.charAt(c & 15)
+    }
+
     // Reply line for one received line (without "\n"), or "" to stay silent.
     export function handleLine(line: string): string {
         if (line.length < 2 || line.charCodeAt(0) != 123) return ""
