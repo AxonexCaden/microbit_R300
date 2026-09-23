@@ -128,6 +128,26 @@ function protocolSweep(driveWheels: boolean): void {
     // answer instead of burning three 500ms retries on a typo.
     sweepStep("noop", () => r300.send("bogus_op", "{}"))                              // 19
 
+    // 20: a detect_done raised BY the robot. This is the one step that sends nothing: nothing else
+    // in this file can reach that path, because it is R300's own request and a bench has no real
+    // one unless the program armed a look (test_all.ts does, but it cannot inspect the bytes). The
+    // line is fed straight into the receiver, and the reply is compared against the line this side
+    // would build for the same ack — that comparison is the whole point, since R300 takes the ack
+    // and drops a malformed one without a word. The verdict landing in the latch is the other half:
+    // answering correctly is no use if the answer itself is thrown away, which is what happened
+    // while this branch was missing (the request fell through to noop).
+    sweepStep(r300.buildLine("a", 20, "detect_done", "{\"st\":\"ok\"}"), () => {
+        const before = r300.detectSeq
+        const reply = r300.handleLine("{\"s\":\"r300\",\"id\":20,\"t\":\"r\",\"op\":\"detect_done\"," +
+            "\"p\":{\"tg\":\"apple\",\"rs\":\"y\"},\"ck\":55}")
+        // sweepStep compares one string, so a failure reports the latch instead of the reply: that
+        // value is the one worth seeing and can never be mistaken for something R300 said.
+        if (r300.detectSeq != before + 1) return "seq+" + (r300.detectSeq - before)
+        if (r300.lastDetectTarget != "apple") return "tg=" + r300.lastDetectTarget
+        if (r300.lastDetectAnswer != "y") return "rs=" + r300.lastDetectAnswer
+        return reply
+    })                                                                                // 20
+
     // The verdict. An aborted sweep is not a pass whatever the count says: an operator stopped
     // it, so nothing after the stop was tested.
     basic.showIcon(sweepFails == 0 && !sweepAbort ? IconNames.Yes : IconNames.No)

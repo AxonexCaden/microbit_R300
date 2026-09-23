@@ -6,6 +6,10 @@ namespace r300 {
     export const SELF_TAG = "mb"
     // R300's line buffer is 254 bytes including the terminator (the MakeCode maximum).
     export const MAX_LINE_BYTES = 253
+    // Longest detect_set target R300 will look for (README.md 9.12), in BYTES: it is what keeps
+    // the detect_done payload inside R300's own notifier cap. Keep in lockstep with R300's
+    // kMaxTarget -- the same target must be answered the same way whether or not the link is up.
+    export const MAX_TARGET_BYTES = 32
     // What R300 logs as `ex`. Keep in step with pxt.json's "version", and keep
     // it inside 23 chars ([A-Za-z0-9._+-]) -- R300 truncates past that and the
     // test vectors in README.md assume it.
@@ -54,6 +58,15 @@ namespace r300 {
     export let lastTakeName = ""
     export let lastTakeSteps = -1
     export let lastTakeDrop = -1
+
+    // The last detection R300 reported, from its `detect_done` request (README.md 9.12): which
+    // object it was asked about and the verdict on it, "y" or "n". Empty until one lands.
+    // ⚠️ These two only ever hold the MOST RECENT verdict, so a wait for "the answer to THIS
+    // question" cannot read them and be right -- it has to watch detectSeq move. Without that,
+    // the previous question's answer is already sitting there and satisfies the wait instantly.
+    export let lastDetectTarget = ""
+    export let lastDetectAnswer = ""
+    export let detectSeq = 0
 
     // Called for every ack that survives the envelope, ck and v checks, so a sender can be
     // woken by the reply it is waiting for. A no-op until r300.ts's sender installs it — a
@@ -114,6 +127,28 @@ namespace r300 {
         for (let i = 0; i < s.length; i++) {
             const c = s.charCodeAt(i)
             if (!((c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95)) return false
+        }
+        return true
+    }
+
+    // Is this a usable detect_set target (README.md 9.12)? R300 refuses an empty one, one past
+    // MAX_TARGET_BYTES, and one carrying a quote, a backslash or a control character -- so this
+    // side refuses those too, because the same target has to be answered the same way whether or
+    // not the link is up.
+    //
+    // ⚠️ It is deliberately STRICTER than R300 in one place: anything at or above 0x80, i.e. any
+    // non-ASCII target, is refused here and would be accepted there. A non-ASCII target cannot
+    // survive the trip as things stand -- the checksum R300 verifies sums the bytes it RECEIVED,
+    // while checksum256() below sums UTF-16 code units, so the two part company the moment the
+    // text leaves ASCII: R300 answers badck to the request itself, and a verdict carrying such a
+    // target would be dropped on the way back. Refusing locally turns that into a visible
+    // "badarg" instead of a 20-second wait for an answer that was never going to arrive.
+    // Lift this with the byte-sum work; R300 alone takes up to MAX_TARGET_BYTES of UTF-8.
+    export function isDetectTarget(s: string): boolean {
+        if (s.length == 0 || s.length > MAX_TARGET_BYTES) return false
+        for (let i = 0; i < s.length; i++) {
+            const c = s.charCodeAt(i)
+            if (c < 0x20 || c > 0x7e || c == 34 || c == 92) return false
         }
         return true
     }
@@ -223,6 +258,23 @@ namespace r300 {
                 lastTakeName = p["name"]
                 lastTakeSteps = p["steps"]
                 lastTakeDrop = p["drop"]
+            }
+            return buildLine("a", id, op, "{\"st\":\"ok\"}")
+        }
+        // R300's verdict on a detect_set the program armed (README.md 9.12) -- its own request,
+        // arriving long after the ack, the same two-stage shape as vol_done above. Like the other
+        // notifier ops it waits only 300ms for this ack and never retries it, so this branch is
+        // not optional: a request landing here with nothing to catch it falls through to "noop",
+        // R300 logs the whole two-stage path as failed, and the student's program waits out its
+        // own timeout for an answer that did arrive. On the RX thread, so it is answered even
+        // while sendOne() is sitting in its wait loop.
+        if (op == "detect_done") {
+            const p = msg["p"]
+            if (p !== undefined && p !== null && typeof p["tg"] == "string" &&
+                typeof p["rs"] == "string") {
+                lastDetectTarget = p["tg"]
+                lastDetectAnswer = p["rs"]
+                detectSeq++
             }
             return buildLine("a", id, op, "{\"st\":\"ok\"}")
         }

@@ -466,6 +466,37 @@ namespace r300 {
         return send("cam_set", q.length == 0 ? "{}" : "{\"q\":\"" + escapeJson(q) + "\"}")
     }
 
+    /**
+     * Ask whether a named object is in front of the robot. The answer does NOT come back here,
+     * or anywhere near here: R300 looks, and the verdict arrives later as a request of its own
+     * (detect_done), landing in lastDetectTarget / lastDetectAnswer. student-facing `saw()` is
+     * what waits on that pair; this function only arms the question.
+     * "ok" means R300 accepted the request, not that it has looked yet.
+     * ⚠️ ONE AT A TIME: a second detect_set while the first is still unanswered is badarg, because
+     * replacing it would leave the first program waiting forever. R300 also lapses a request of
+     * its own accord after ~30 s (UNMEASURED) if the model never gets round to it.
+     * ⚠️ Same door as cam_set: it needs an OPEN AI CONVERSATION (ai_set, or the robot's boot
+     * button), and that cannot be checked from here. No camera, limited-charging mode, a vision
+     * call already in flight and a missing session all come back as the same badarg.
+     * ⚠️ SILENCE IS A REAL OUTCOME. If the model answers in words instead of calling its tool, or
+     * its reply contains neither the word yes nor the word no, R300 sends NOTHING AT ALL -- no
+     * error code, no detect_done -- so whoever waits for an answer must time out on its own.
+     * The target must be usable: empty, past 32 bytes, or carrying a quote, a backslash, a control
+     * character or anything non-ASCII is refused HERE, with the same "badarg" R300 would send, and
+     * nothing goes on the wire (isDetectTarget). "noop" means this R300's firmware predates
+     * detect_set.
+     */
+    //% blockId=r300_detect block="look for %target"
+    //% blockHidden=true
+    //% weight=91
+    export function detect(target: string): string {
+        if (!isDetectTarget(target)) return keepReply("badarg")
+        // Escaped even though the check above has already refused every character that needs it:
+        // this payload is the one place a stray quote would break the envelope, and the non-ASCII
+        // refusal above is meant to be lifted one day.
+        return send("detect_set", "{\"tg\":\"" + escapeJson(target) + "\"}")
+    }
+
     // Clamp a number into an inclusive range. Deliberately NOT a block: it exists for the
     // student-facing wrappers below, whose arguments can come from JavaScript or from
     // arithmetic and therefore never met a block field's min/max. R300 refuses out-of-range
@@ -1040,6 +1071,72 @@ namespace r300_camera {
     //% q.defl="What do you see?"
     export function takePhoto(q: string): void {
         r300.cam(q)
+    }
+
+    /**
+     * Ask the robot to look for a named object — a chair, an apple, your hand — and carry on with
+     * the program while it does. This block only asks the question: it comes back as soon as the
+     * robot has taken the request, long before anything has been seen. Put "R300 saw ...?" after
+     * it when the program actually wants the answer.
+     *
+     * ⚠️ It needs a conversation with the AI already open — press the robot's boot button, or use
+     * "start an AI conversation". Without one the request is refused, and the block cannot tell
+     * you: check "the last command was accepted" if it matters.
+     *
+     * ⚠️ One look at a time. Asking about a second object before the first has answered is
+     * refused, because replacing the first question would leave it unanswered for good. A look
+     * the robot never gets round to is abandoned after about thirty seconds.
+     *
+     * ⚠️ Type the object the same way here and in "R300 saw ...?": the answer comes back tagged
+     * with the object it was about, and the waiting block matches on it.
+     */
+    //% blockId=r300_camera_start block="R300 starts looking for %target"
+    //% weight=95
+    //% target.defl="apple"
+    export function startLooking(target: string): void {
+        r300.detect(target)
+    }
+
+    /**
+     * Wait for the robot to answer the look started above, then say whether it saw the object.
+     * False means it answered "no" — or that no answer came at all within the seconds you chose,
+     * which includes the robot giving up on the look. R300 sends nothing when its model answers in
+     * words instead of looking, so the two cannot be told apart from here, and a program is better
+     * off treating either one as "not seen".
+     *
+     * ⚠️ Use it after "R300 starts looking for", with the object typed THE SAME WAY in both
+     * blocks. This block waits for an answer about the object it names, so a target spelled
+     * differently in the two waits out the whole timeout and says false. With no look started
+     * before it, it does the same: there is no question for an answer to belong to.
+     *
+     * ⚠️ The waiting happens right here, so nothing else in this stack runs until it is over —
+     * other button handlers keep working. About nine seconds is typical, and twenty is the robot's
+     * own worst case for the vision call alone. Thirty is the longest the question can stay alive
+     * on the robot, so a wait past that only sits on a question that is already dead — but note
+     * that the two can add up: a look the robot begins at the end of its thirty seconds can still
+     * answer about twenty seconds later, and by then this block will have given up. Its false is
+     * the honest answer either way, since nothing here can tell a late yes from a silent no.
+     */
+    //% blockId=r300_camera_saw block="R300 saw %target? for up to %seconds seconds"
+    //% weight=90
+    //% target.defl="apple"
+    //% seconds.min=1 seconds.max=30 seconds.defl=20
+    export function saw(target: string, seconds: number): boolean {
+        // The counter, not the answer: lastDetectAnswer is still holding the PREVIOUS verdict, so
+        // reading it would return the last question's answer instantly. A new answer is exactly a
+        // moved counter.
+        const before = r300.detectSeq
+        const deadline = control.millis() + r300.clamp(Math.round(seconds), 1, 30) * 1000
+        while (control.millis() < deadline) {
+            if (r300.detectSeq != before) {
+                // Only one look can be outstanding, so the first answer after this wait began is
+                // the one it is waiting for. If it names a different object, no other answer is
+                // coming — saying false now beats stalling for the rest of the timeout.
+                return r300.lastDetectTarget == target && r300.lastDetectAnswer == "y"
+            }
+            basic.pause(50)
+        }
+        return false
     }
 }
 

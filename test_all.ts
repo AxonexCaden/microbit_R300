@@ -1,4 +1,4 @@
-// test_all.ts — bench sweep over EVERY block the R300 extension publishes (27 of them, 41 steps).
+// test_all.ts — bench sweep over EVERY block the R300 extension publishes (29 of them, 44 steps).
 //
 // Copy this whole file into a MakeCode micro:bit project that has the R300 extension added and
 // switch to the Blocks view: every call below is one of the blocks a student can drag out, so
@@ -24,8 +24,9 @@
 //
 // SIDE EFFECTS: the recording section leaves a routine on the robot, REPLACING whatever
 // mcp_microbit_1 held before; the conversation steps open a conversation with the AI and then
-// try to close it again; the camera step sends a real photo to the robot's vision model and the
-// robot answers it OUT LOUD, which takes about nine seconds; talk-over is left ENABLED (step 27
+// try to close it again; the camera steps send a real photo to the robot's vision model and it
+// answers OUT LOUD, which takes about nine seconds; the look step leaves the robot armed for up
+// to thirty seconds if the model never runs the detection; talk-over is left ENABLED (step 27
 // has the last word on it); the music step leaves a song playing, which mutes the robot's own mic
 // until it ends; and the robot is left stopped, at volume 50, face happy.
 //
@@ -75,10 +76,13 @@
 //   39  start an AI conversation          leaves it OPEN; see the note at the step
 //   40  take a photo and ask              needs the conversation 39 opened; the robot answers
 //                                        out loud, and about nine seconds pass before step 41
-//   41  stop driving now                  park the robot
+//   41  R300 starts looking for apple     one named object, the same door the photo uses
+//   42  R300 saw apple? for up to 1 s     the timeout path: false unless an answer beats it
+//   43  R300 starts looking for nothing   refused HERE — accepted? must go false
+//   44  stop driving now                  park the robot
 
 // ---------------------------------------------------------------------------
-// Steps 6-41 each assert the one thing a bench can see for itself: that R300 took the request.
+// Steps 6-44 each assert the one thing a bench can see for itself: that R300 took the request.
 // That is what "the last command was accepted" means, and it is the block a lesson uses to put a
 // robot fact inside an if. The one refusal that can be produced on demand is step 36; the other
 // way accepted? goes false — a second command landing while a request is still waiting for its
@@ -303,10 +307,37 @@ function sweep(): void {
     r300_camera.takePhoto("What do you see?")
     check(r300_status.accepted())                            // 40
 
-    // 41 — park it. The stop and the hands land at once; the face change is queued behind step
+    // 41 — R300 starts looking for apple. The same door 40 used, so it needs the conversation 39
+    //      opened. This block only ASKS: the verdict comes back as a request of its own, seconds
+    //      later, and the extension latches it when it arrives. Nothing about it shows up here.
+    r300_camera.startLooking("apple")
+    check(r300_status.accepted())                            // 41
+
+    // 42 — R300 saw apple? for up to 1 seconds. The assertion is `false`, and that is the part of
+    //      this block a bench can actually prove: no verdict can arrive inside one second — the
+    //      vision call alone runs about nine, as step 40 showed — so the wait has to end by itself
+    //      and say so. Whether this robot can see an apple is NOT something this file can know,
+    //      and the step does not claim to; what it proves is that a wait with no answer returns.
+    //      The matrix stays on 41 for that second: the wait is inside the block, and the step
+    //      number is shown after it, as with 40. WATCH: a verdict landing inside the second would
+    //      fail this step, and would mean the look from 41 was answered faster than 40's photo.
+    const sawApple = r300_camera.saw("apple", 1)
+    check(!sawApple)                                         // 42
+
+    // 43 — an empty target is refused HERE, before anything reaches the wire, and the whole point
+    //      of the step is that the refusal is VISIBLE: accepted? goes false, the same way step 36's
+    //      over-long description does. It has to be checked alone, because with a target R300
+    //      itself rejects there is no ack to tell the two apart — the sender's own timeout and a
+    //      refusal look identical in the reply. A target in another alphabet is refused for the
+    //      same reason and by the same guard (the checksum cannot survive one), which the README
+    //      records rather than this file typing one out.
+    r300_camera.startLooking("")
+    check(!r300_status.accepted())                           // 43
+
+    // 44 — park it. The stop and the hands land at once; the face change is queued behind step
     //      40's photo if that is still in flight, and shows up a few seconds late.
     r300_movement.stop()
-    check(r300_status.accepted())                            // 41
+    check(r300_status.accepted())                            // 44
     r300_emotion.showFace(r300.Emoji.Happy)
     r300_hands.bothHands(r300_hands.HandPose.Down)
     // Best effort, and never checked: see the note above. If the robot is still listening, its own
