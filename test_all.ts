@@ -1,4 +1,4 @@
-// test_all.ts — bench sweep over EVERY block the R300 extension publishes (29 of them, 44 steps).
+// test_all.ts — bench sweep over EVERY block the R300 extension publishes (29 of them, 46 steps).
 //
 // Copy this whole file into a MakeCode micro:bit project that has the R300 extension added and
 // switch to the Blocks view: every call below is one of the blocks a student can drag out, so
@@ -79,14 +79,16 @@
 //   41  R300 starts looking for apple     one named object, the same door the photo uses
 //   42  R300 saw apple? for up to 1 s     the timeout path: false unless an answer beats it
 //   43  R300 starts looking for nothing   refused HERE — accepted? must go false
-//   44  stop driving now                  park the robot
+//   44  a 15-byte object                  refused HERE too, on the byte cap — 14 shows on the LED
+//   45  R300 saw that same 15-byte object  refused before the wait: false at once, not after 30 s
+//   46  stop driving now                  park the robot
 
 // ---------------------------------------------------------------------------
-// Steps 6-44 each assert the one thing a bench can see for itself: that R300 took the request.
+// Steps 6-46 each assert the one thing a bench can see for itself: that R300 took the request.
 // That is what "the last command was accepted" means, and it is the block a lesson uses to put a
-// robot fact inside an if. The one refusal that can be produced on demand is step 36; the other
-// way accepted? goes false — a second command landing while a request is still waiting for its
-// ack — needs two handlers racing inside a 500 ms window and cannot be scripted.
+// robot fact inside an if. The refusals that can be produced on demand are 36, 43 and 44; the
+// other way accepted? goes false — a second command landing while a request is still waiting for
+// its ack — needs two handlers racing inside a 500 ms window and cannot be scripted.
 // ---------------------------------------------------------------------------
 
 let step = 0
@@ -244,9 +246,9 @@ function sweep(): void {
     //         closes the audio channel, which would cut off a reply being spoken — so a failure
     //         here usually means the robot was talking, not that the block is dead. Press it
     //         again once it is quiet before believing it.
-    r300_talkover.stopTalkingOver()
+    r300_ai.stopTalkingOver()
     check(r300_status.accepted())                            // 26 off
-    r300_talkover.allowTalkingOver()
+    r300_ai.allowTalkingOver()
     check(r300_status.accepted())                            // 27 on — and left on
 
     // 28-35 — the recording flow. This is the only part of the extension that leaves something
@@ -334,10 +336,30 @@ function sweep(): void {
     r300_camera.startLooking("")
     check(!r300_status.accepted())                           // 43
 
-    // 44 — park it. The stop and the hands land at once; the face change is queued behind step
+    // 44 — the BYTE cap, which is the refusal a student is likelier to meet than the empty one: "the
+    //      big red car" is 15 bytes, one past what R300 will ask the server about, and it is ordinary
+    //      English no word count would flag. Same shape as 43 — accepted? goes false — plus the one
+    //      thing 43 has not got: the block shows 14 on the LED, which is the only way it can say WHAT
+    //      it refused. WATCH for the 14; it holds a second. The extension catches this before the
+    //      wire, so nothing goes out and there is no ack, exactly as in 43: what this step proves is
+    //      that the guard is there at all, because the numbers on the LED and in R300's log are the
+    //      only other places it could show up.
+    r300_camera.startLooking("the big red car")
+    check(!r300_status.accepted())                           // 44
+
+    // 45 — the waiting block carries the same target. It has the same guard on purpose: a student
+    //      types the object into both blocks and either one may be the one that catches it, and a
+    //      wait on a question that was never asked could only burn its whole timeout to arrive at
+    //      the same false. So the assertion is a false returned AT ONCE — thirty seconds are passed
+    //      deliberately, so that a missing guard shows up as a stall to write down rather than as a
+    //      silent pass. WATCH: the 14 on the LED again, immediately, from the same guard.
+    const sawLongTarget = r300_camera.saw("the big red car", 30)
+    check(!sawLongTarget)                                    // 45
+
+    // 46 — park it. The stop and the hands land at once; the face change is queued behind step
     //      40's photo if that is still in flight, and shows up a few seconds late.
     r300_movement.stop()
-    check(r300_status.accepted())                            // 44
+    check(r300_status.accepted())                            // 46
     r300_emotion.showFace(r300.Emoji.Happy)
     r300_hands.bothHands(r300_hands.HandPose.Down)
     // Best effort, and never checked: see the note above. If the robot is still listening, its own

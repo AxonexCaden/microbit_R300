@@ -47,7 +47,7 @@ Two things that surprise people:
 
 ## What you can control
 
-Nine groups in the toolbox:
+Eight groups in the toolbox:
 
 | Group | What it does |
 |---|---|
@@ -55,11 +55,10 @@ Nine groups in the toolbox:
 | **R300 Hands** | Either hand, or both, to `up` (0°), `down` (90°) or `back` (180°) — plus both angles by hand under **Custom Control** |
 | **R300 Emotion** | One of 19 faces on the robot's eyes; the face stays until you change it |
 | **R300 Speaker** | `set speaker volume to` / `change speaker volume by` / read `speaker volume` — the same set, change, read shape Music gives tempo |
-| **R300 AI** | Talk to the robot's AI: `start` / `end an AI conversation` (what its own boot button does), and describe + record a routine so the robot replays it on a voice command. `moves recorded` and `routine was cut short?` report what the last take captured |
-| **R300 Talk Over** | Allow, or stop, talking over the robot's reply — two absolute states, never a toggle |
+| **R300 AI** | Talk to the robot's AI: `start` / `end an AI conversation` (what its own boot button does), and describe + record a routine so the robot replays it on a voice command. `moves recorded` and `routine was cut short?` report what the last take captured. Under **Talk Over**, allow or stop talking over the robot's reply — two absolute states, never a toggle |
 | **R300 Status** | `R300 is connected` and `the last command was accepted` — the two values a program can put in a variable or test in an `if` |
 | **R300 Music** | `play song` — one of the robot's three songs, by name. Music only: the robot does not drive itself while a song plays, and it stops hearing you until the song ends |
-| **R300 Camera** | `take a photo and ask` — one photo goes to the robot's vision model with your question, and nothing comes back to your program. `R300 starts looking for` and `R300 saw …? for up to … seconds` are the pair that does answer: ask about one named object, then wait for a yes or no. All three need an AI conversation already open |
+| **R300 Camera** | `take a photo and ask` — one photo goes to the robot's vision model with your question, and nothing comes back to your program. `R300 starts looking for` (its label carries the object's **14-byte** limit) and `R300 saw …? for up to … seconds` are the pair that does answer: ask about one named object, then wait for a yes or no. All three need an AI conversation already open |
 
 Two groups in one program:
 
@@ -84,7 +83,7 @@ These have no blocks — use the **JavaScript** tab:
 | `r300.volume(v)` | Volume, 0–100 |
 | `r300.song(ix)` | Play one of the three songs, 0–2; needs a robot built with the feature |
 | `r300.cam(q)` | Ask the robot's vision model about a photo; `q` optional, and needs an AI conversation already open |
-| `r300.detect(tg)` | Ask whether one named object is visible, and get a yes or no back. `tg` is 1–32 ASCII bytes with no `"` or `\`; needs an AI conversation already open, and one look at a time |
+| `r300.detect(tg)` | Ask whether one named object is visible, and get a yes or no back. `tg` is 1–14 ASCII bytes with no `"` or `\` (the wire takes 32; R300 only answers 14); needs an AI conversation already open, and one look at a time |
 | `r300.describe(name, desc)` | Name (1–24 chars of `[a-z0-9_]`) and describe a recording before taking it |
 | `r300.takeStart()` / `r300.takeFinish()` | Start / finish a recording |
 | `r300.send(op, pJson)` | Send any operation directly |
@@ -413,7 +412,7 @@ never sends the `f` (6 — the side that sends the `r` is the side that closes i
 
 | Field | Meaning |
 |---|---|
-| `tg` | the object to look for: 1–32 **bytes**, printable, no `"` and no `\` |
+| `tg` | the object to look for: 1–**14 bytes** to be answered at all — the wire carries 32, but R300 answers 14 (see the byte cap below) — printable, no `"` and no `\` |
 | `rs` | the verdict, exactly `"y"` or `"n"` — there is no third value |
 
 ⚠️ **Silence is a real outcome.** R300 sends **nothing at all** — no error code, no
@@ -442,13 +441,36 @@ the next one.
 question reaches the model through the session the MCP handshake opened, so a unit
 without one refuses it exactly as a unit with no camera does.
 
-⚠️ **A non-ASCII target is refused here, not by R300.** R300 itself takes up to 32
-bytes of UTF-8, but a target outside ASCII cannot survive the trip — the checksum in
-(4) is a byte sum, and the extension's is still computed over UTF-16 code units (see
-9.11). The block reports `badarg` without sending, rather than leaving a program to
-wait out its own timeout for an answer that cannot come.
+⚠️ **The target has a byte cap, and it is 14 — not the wire's 32.** R300 does not
+look at the object itself. It injects it into a short question — `see <target>?` —
+and sends that to the server on the **wake-word channel**, which is the only
+device→server text channel there is (there is no local speech). The server refuses
+a text too long to be a wake word ("Detect is only for wake words, do not send long
+texts"), and nothing downstream of the injection can see that refusal, so R300
+refuses the request itself, with `badarg` at accept time, and sends nothing. Its two
+constants are 19 bytes for the injected text and 5 for the `see ` / `?` wrapper,
+which leaves **14 bytes for the object**: `thumbs up` (9 bytes) is answered, and a
+15th byte is `badarg` no matter how few words it took.
 
-`badarg` covers a malformed payload, a target that is missing, empty, over 32 bytes
+Bytes are not characters — an accented letter costs 2, a Chinese character 3 — so
+six Chinese characters is 18 bytes. (A non-ASCII target is refused here whatever its
+length, for the checksum reason in the next warning; the byte count is what will
+matter if that is ever lifted.)
+
+The number is **measured, not published**: it comes from R300's two constants, and
+what was measured is the injected question — 19 bytes carried, 60 refused
+(2026-09-24 / 2026-09-23) — so 14 is a working number inside a bracket, and it is
+expected to move when R300 learns the server's real limit. The extension keeps its
+one copy in `MAX_ASK_TARGET_BYTES` (protocol.ts) and reports the same `badarg` R300
+would, so a program's answer does not depend on which side noticed first.
+
+⚠️ **A non-ASCII target is refused here, not by R300.** R300 measures the target in
+bytes like the cap above, but a target outside ASCII cannot survive the trip whatever
+its length — the checksum in (4) is a byte sum, and the extension's is still computed
+over UTF-16 code units (see 9.11). The block reports `badarg` without sending, rather
+than leaving a program to wait out its own timeout for an answer that cannot come.
+
+`badarg` covers a malformed payload, a target that is missing, empty, over 14 bytes
 or unsafe, a unit with no camera, limited-charging mode, a vision call already in
 flight, **and no live AI session** — a program cannot tell those apart. A refusal is
 cached against `(id, op)` (7 #4), so a retry needs a **new id**.
@@ -464,12 +486,16 @@ Test vectors, each checked against the rule in (7 #4):
 | `{"s":"mb","id":72,"t":"r","op":"detect_set","p":{},"ck":179}` | `badarg` — `tg` missing |
 | `{"s":"mb","id":73,"t":"r","op":"detect_set","p":{"tg":""},"ck":81}` | `badarg` — `tg` empty |
 | `{"s":"mb","id":74,"t":"r","op":"detect_set","p":{"tg":7},"ck":69}` | `badarg` — `tg` is a number |
-| `{"s":"mb","id":75,"t":"r","op":"detect_set","p":{"tg":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"ck":212}` | `badarg` — 33 bytes, past the cap |
+| `{"s":"mb","id":75,"t":"r","op":"detect_set","p":{"tg":"aaaaaaaaaaaaaa"},"ck":161}` | `ok` — 14 bytes, the last target that gets asked |
+| `{"s":"mb","id":76,"t":"r","op":"detect_set","p":{"tg":"aaaaaaaaaaaaaaa"},"ck":3}` | `badarg` — 15 bytes, one past the ask cap |
+| `{"s":"mb","id":77,"t":"r","op":"detect_set","p":{"tg":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"ck":214}` | `badarg` — 33 bytes, past the wire's own 32 as well |
 
 70 → 71 is +92 because the id rises by 1 and `red ` adds 347, and 348 wraps to 92.
 Everything from 72 on needs a hand-built line: the extension refuses a target that
-is empty, over 32 bytes, unsafe or non-ASCII before it puts anything on the wire, in
-the same way that 9.11's `{"q":""}` cannot be reached from its block.
+is empty, over 14 bytes, unsafe or non-ASCII before it puts anything on the wire, in
+the same way that 9.11's `{"q":""}` cannot be reached from its block. The last three
+rows mark the boundary — 14 is answered, 15 is not, and 33 adds the wire's own cap
+on top (R300 would have refused 15 by itself; see the byte cap above).
 
 ### 10. Timing summary
 
@@ -485,6 +511,14 @@ the same way that 9.11's `{"q":""}` cannot be reached from its block.
 `badarg` (bad payload) · `busy` (temporarily refusing).
 
 253 bytes per line maximum; both serial buffers are 254 bytes.
+
+A detection target is **14 bytes**, not the 32 the wire would carry: past 14 R300
+refuses the request at accept time with `badarg`, because it can only ask the server
+about that much (9.12). Bytes, not characters — an Arabic letter costs 2 and a CJK
+character 3, so a target that looks short can be over. The extension refuses the
+same targets locally and reports the same `badarg`, so the block's answer does not
+depend on which side noticed; the number itself is a measured one and is expected to
+move.
 
 Not every failure has a code. A two-stage operation is acked long before it is
 finished, and the second stage can never arrive: a detection whose question the

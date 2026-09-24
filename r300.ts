@@ -481,10 +481,10 @@ namespace r300 {
      * ⚠️ SILENCE IS A REAL OUTCOME. If the model answers in words instead of calling its tool, or
      * its reply contains neither the word yes nor the word no, R300 sends NOTHING AT ALL -- no
      * error code, no detect_done -- so whoever waits for an answer must time out on its own.
-     * The target must be usable: empty, past 32 bytes, or carrying a quote, a backslash, a control
-     * character or anything non-ASCII is refused HERE, with the same "badarg" R300 would send, and
-     * nothing goes on the wire (isDetectTarget). "noop" means this R300's firmware predates
-     * detect_set.
+     * The target must be usable: empty, over MAX_ASK_TARGET_BYTES, or carrying a quote, a
+     * backslash, a control character or anything non-ASCII is refused HERE, with the same "badarg"
+     * R300 would send, and nothing goes on the wire (isDetectTarget). "noop" means this R300's
+     * firmware predates detect_set.
      */
     //% blockId=r300_detect block="look for %target"
     //% blockHidden=true
@@ -797,41 +797,13 @@ namespace r300_speaker {
     }
 }
 
-//% color="#E67E22" icon="\uf130" block="R300 Talk Over"
-//% groups="['Talk Over On', 'Talk Over Off']"
-namespace r300_talkover {
-    /**
-     * Let the user interrupt R300 by talking while it is speaking: it stops the reply and
-     * listens to them instead. Until this runs, only R300's own wake word can interrupt it.
-     * The mode is absolute (there is deliberately no toggle block, so a replay cannot invert
-     * it) and it does not survive a reboot — put this in "on start" to apply it to every run.
-     * R300 accepts it only while idle, and this block, like every action block, does not show
-     * a refusal: if it was pressed mid-reply, simply press it again once the reply finishes.
-     */
-    //% blockId=r300_talkover_allow block="allow talking over R300's reply"
-    //% weight=100
-    //% group="Talk Over On"
-    export function allowTalkingOver(): void {
-        r300.aec(true)
-    }
-
-    /**
-     * Stop letting the user talk over R300: only its wake word ends a reply. The mirror of
-     * allowTalkingOver(), and the state a freshly booted R300 starts in.
-     */
-    //% blockId=r300_talkover_stop block="don't allow talking over R300's reply"
-    //% weight=90
-    //% group="Talk Over Off"
-    export function stopTalkingOver(): void {
-        r300.aec(false)
-    }
-}
-
 // One category for everything that talks to the robot's AI. The conversation pair comes first
 // (that is where a lesson starts) and the recording flow follows it; they were two namespaces —
 // and so two toolbox drawers with confusingly similar names — until they were merged here.
+// Talk-over joined them the same way: its two blocks are about the robot's spoken replies, which
+// is what this drawer is for, and two blocks did not earn a drawer of their own.
 //% color="#E67E22" icon="\uf0d0" block="R300 AI"
-//% groups="['Conversation', 'MCP Setup']"
+//% groups="['Conversation', 'MCP Setup', 'Talk Over']"
 namespace r300_ai {
     /**
      * Start a conversation with the AI — the same thing one press of the robot's boot button
@@ -962,6 +934,35 @@ namespace r300_ai {
     export function recordingWasCutShort(): boolean {
         return r300.lastTakeDrop > 0
     }
+
+    // The ids keep their old "talkover" spelling on purpose. A saved project stores the block ID,
+    // not the drawer it came from, so leaving them alone means every project already built with
+    // these two blocks still opens, compiles and runs — the block just turns up under R300 AI now.
+    /**
+     * Let the user interrupt R300 by talking while it is speaking: it stops the reply and
+     * listens to them instead. Until this runs, only R300's own wake word can interrupt it.
+     * The mode is absolute (there is deliberately no toggle block, so a replay cannot invert
+     * it) and it does not survive a reboot — put this in "on start" to apply it to every run.
+     * R300 accepts it only while idle, and this block, like every action block, does not show
+     * a refusal: if it was pressed mid-reply, simply press it again once the reply finishes.
+     */
+    //% blockId=r300_talkover_allow block="allow talking over R300's reply"
+    //% weight=100
+    //% group="Talk Over"
+    export function allowTalkingOver(): void {
+        r300.aec(true)
+    }
+
+    /**
+     * Stop letting the user talk over R300: only its wake word ends a reply. The mirror of
+     * allowTalkingOver(), and the state a freshly booted R300 starts in.
+     */
+    //% blockId=r300_talkover_stop block="don't allow talking over R300's reply"
+    //% weight=90
+    //% group="Talk Over"
+    export function stopTalkingOver(): void {
+        r300.aec(false)
+    }
 }
 
 //% color="#E67E22" icon="\uf059" block="R300 Status"
@@ -1051,7 +1052,12 @@ namespace r300_music {
     }
 }
 
-//% color="#E67E22" icon="\uf030" weight=87 block="R300 Camera"
+// No `weight=` here, deliberately. Only R300 (100) carries one; the eight drawers between it and
+// this one have none, and that shared default is what keeps them together. A weight of 87 on THIS
+// drawer alone lifts it out of that band and into the core drawers (it lands between Radio and
+// Loops), which is where it used to sit. With no weight it takes the same default as R300 Music,
+// and being declared last, it follows it.
+//% color="#E67E22" icon="\uf030" block="R300 Camera"
 namespace r300_camera {
     /**
      * Take a photo and send it to R300's vision model with a question. Type the question in the
@@ -1073,11 +1079,39 @@ namespace r300_camera {
         r300.cam(q)
     }
 
+    // A target the robot cannot be asked about is refused here, and the limit is SHOWN rather than
+    // only set: a void block has nowhere to return it, and nothing was sent, so there is no ack and
+    // nothing in R300's log to find — the same reasoning as the description's own refusal above,
+    // and the same shape. The reply is R300's own "badarg" rather than "long" because R300 sends
+    // badarg for this same target when it is the one to catch it, and a program checking that
+    // answer should not get a different one depending on who looked first.
+    function refuseTarget(target: string): boolean {
+        if (r300.utf8Bytes(target) <= r300.MAX_ASK_TARGET_BYTES) return false
+        r300.setLastReply("badarg")
+        basic.showNumber(r300.MAX_ASK_TARGET_BYTES)
+        basic.pause(1000)
+        basic.clearScreen()
+        return true
+    }
+
     /**
      * Ask the robot to look for a named object — a chair, an apple, your hand — and carry on with
      * the program while it does. This block only asks the question: it comes back as soon as the
      * robot has taken the request, long before anything has been seen. Put "R300 saw ...?" after
      * it when the program actually wants the answer.
+     *
+     * ⚠️ Keep the object to 14 BYTES — that is roughly 14 letters, and the block shows 14 on the
+     * LED if you go past it. The limit is not ours: the robot puts the object into a short question
+     * it sends to the server as a wake word, and the server refuses a longer one, so the robot
+     * turns long targets away itself. BYTES ARE NOT CHARACTERS — an accented letter costs 2 and a
+     * Chinese character 3, so six Chinese characters is 18 bytes and is refused even though it
+     * looks short. It is a measured limit, not a rule of the language, and it may change.
+     *
+     * ⚠️ Accented and non-English letters are refused as well, whatever their length: the link
+     * between the two boards cannot carry them yet. Unlike the length limit, that refusal shows
+     * nothing on the LED, so a short target in Chinese or with an accent simply does not go out —
+     * and since nothing was sent, there is no answer either. "The last command was accepted" is
+     * what tells you.
      *
      * ⚠️ It needs a conversation with the AI already open — press the robot's boot button, or use
      * "start an AI conversation". Without one the request is refused, and the block cannot tell
@@ -1090,10 +1124,11 @@ namespace r300_camera {
      * ⚠️ Type the object the same way here and in "R300 saw ...?": the answer comes back tagged
      * with the object it was about, and the waiting block matches on it.
      */
-    //% blockId=r300_camera_start block="R300 starts looking for %target"
+    //% blockId=r300_camera_start block="R300 starts looking for %target (max 14 bytes)"
     //% weight=95
     //% target.defl="apple"
     export function startLooking(target: string): void {
+        if (refuseTarget(target)) return
         r300.detect(target)
     }
 
@@ -1109,6 +1144,10 @@ namespace r300_camera {
      * differently in the two waits out the whole timeout and says false. With no look started
      * before it, it does the same: there is no question for an answer to belong to.
      *
+     * ⚠️ An object past the 14-byte limit is refused by the looking block, so no question was ever
+     * asked and there is nothing for this one to hear. It says false at once and shows 14 on the
+     * LED, rather than waiting out the timeout for an answer that was never coming.
+     *
      * ⚠️ The waiting happens right here, so nothing else in this stack runs until it is over —
      * other button handlers keep working. About nine seconds is typical, and twenty is the robot's
      * own worst case for the vision call alone. Thirty is the longest the question can stay alive
@@ -1122,6 +1161,10 @@ namespace r300_camera {
     //% target.defl="apple"
     //% seconds.min=1 seconds.max=30 seconds.defl=20
     export function saw(target: string, seconds: number): boolean {
+        // Nothing can answer a question that was never asked, so the wait below would only burn the
+        // whole timeout to arrive at the same false. Refused here instead, with the limit shown:
+        // the student typed the object in two blocks and either one may be the one that catches it.
+        if (refuseTarget(target)) return false
         // The counter, not the answer: lastDetectAnswer is still holding the PREVIOUS verdict, so
         // reading it would return the last question's answer instantly. A new answer is exactly a
         // moved counter.

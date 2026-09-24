@@ -85,11 +85,11 @@ r300_emotion.showFace(r300.Emoji.Surprised)
 led.toggle(0, 0)
 basic.pause(1000)
 // 15 — talk over: let the user interrupt R300 while it speaks.
-r300_talkover.allowTalkingOver()
+r300_ai.allowTalkingOver()
 led.toggle(0, 0)
 basic.pause(1000)
 // 16 — talk over: back to only the wake word, the way a fresh R300 boots.
-r300_talkover.stopTalkingOver()
+r300_ai.stopTalkingOver()
 led.toggle(0, 0)
 basic.pause(1000)
 // 17 — conversation: open one without touching the robot's boot button.

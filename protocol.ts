@@ -6,10 +6,27 @@ namespace r300 {
     export const SELF_TAG = "mb"
     // R300's line buffer is 254 bytes including the terminator (the MakeCode maximum).
     export const MAX_LINE_BYTES = 253
-    // Longest detect_set target R300 will look for (README.md 9.12), in BYTES: it is what keeps
+    // Longest detect_set target that fits the WIRE (README.md 9.12), in BYTES: it is what keeps
     // the detect_done payload inside R300's own notifier cap. Keep in lockstep with R300's
     // kMaxTarget -- the same target must be answered the same way whether or not the link is up.
+    // It is the CEILING, not today's limit: MAX_ASK_TARGET_BYTES below binds first.
     export const MAX_TARGET_BYTES = 32
+    // Longest detect_set target R300 can actually SERVE today, in BYTES, and the difference
+    // between "accepted" and "answered" (README.md 9.12). R300 puts the target into a short
+    // question injected on the WAKE-WORD channel -- the server's channel, not R300's preference --
+    // and the server refuses a long text there out loud ("Detect is only for wake words, do not
+    // send long texts"). Nothing downstream can see that refusal, so R300 refuses the request
+    // instead. So this mirrors R300's own arithmetic, not a preference of ours:
+    //     kMaxAskBytes (19) - kAskWrapper (5) = 14
+    // "see " (4) + the target + "?" (1) is what R300 injects. ⚠️ THE NUMBER IS EXPECTED TO MOVE:
+    // R300's 19 is a proxy for a server limit still being measured (19 bytes carried, 60 refused,
+    // as of 2026-09-24), and R300 raises kMaxAskBytes when the real bracket closes. Nothing else
+    // can compute it from here, so 14 is repeated as prose in the startLooking block label, in the
+    // two camera blocks' doc comments and in README.md 9.12 -- move those together with this line.
+    // It disappears entirely if R300
+    // ever carries the target on the vision prompt instead of the wake-word channel, and then
+    // MAX_TARGET_BYTES is the only limit left.
+    export const MAX_ASK_TARGET_BYTES = 14
     // What R300 logs as `ex`. Keep in step with pxt.json's "version", and keep
     // it inside 23 chars ([A-Za-z0-9._+-]) -- R300 truncates past that and the
     // test vectors in README.md assume it.
@@ -131,10 +148,37 @@ namespace r300 {
         return true
     }
 
+    // How many bytes a string occupies as UTF-8, which is what R300 counts -- and what a length
+    // check on this side must use to mean the same thing. MakeCode's .length counts UTF-16 code
+    // units, so a target in Chinese costs 3 bytes per character and one in Arabic 2, and a target
+    // that looks short on screen can be over the cap with nothing about it looking wrong.
+    // ⚠️ Today every string that gets this far is ASCII, because isDetectTarget refuses anything
+    // above 0x7e -- so this and .length agree, and it is here so that MAX_ASK_TARGET_BYTES keeps
+    // meaning BYTES on the day that refusal is lifted (README.md 9.11, the byte-sum work).
+    export function utf8Bytes(s: string): number {
+        let n = 0
+        for (let i = 0; i < s.length; i++) {
+            const c = s.charCodeAt(i)
+            if (c < 0x80) n += 1
+            else if (c < 0x800) n += 2
+            // A surrogate is half of one 4-byte character, and the other half is the next unit:
+            // counting it puts the two in step so a pair costs 4, not 6.
+            else if (c >= 0xd800 && c <= 0xdbff) { n += 4; i++ }
+            else n += 3
+        }
+        return n
+    }
+
     // Is this a usable detect_set target (README.md 9.12)? R300 refuses an empty one, one past
-    // MAX_TARGET_BYTES, and one carrying a quote, a backslash or a control character -- so this
-    // side refuses those too, because the same target has to be answered the same way whether or
-    // not the link is up.
+    // its byte cap, and one carrying a quote, a backslash or a control character -- so this side
+    // refuses those too, because the same target has to be answered the same way whether or not
+    // the link is up.
+    //
+    // The cap is MAX_ASK_TARGET_BYTES, not MAX_TARGET_BYTES: R300 can carry 32 bytes on the wire
+    // but can only ask the server about 14, and the smaller one is the honest answer to "will this
+    // work?". Both are checked rather than only the smaller one, because they are expected to swap
+    // places: the ask cap is the one that moves, and a target past the wire's 32 bytes has to stay
+    // refused however far it moves.
     //
     // ⚠️ It is deliberately STRICTER than R300 in one place: anything at or above 0x80, i.e. any
     // non-ASCII target, is refused here and would be accepted there. A non-ASCII target cannot
@@ -145,7 +189,9 @@ namespace r300 {
     // "badarg" instead of a 20-second wait for an answer that was never going to arrive.
     // Lift this with the byte-sum work; R300 alone takes up to MAX_TARGET_BYTES of UTF-8.
     export function isDetectTarget(s: string): boolean {
-        if (s.length == 0 || s.length > MAX_TARGET_BYTES) return false
+        if (s.length == 0) return false
+        if (utf8Bytes(s) > MAX_ASK_TARGET_BYTES) return false
+        if (s.length > MAX_TARGET_BYTES) return false
         for (let i = 0; i < s.length; i++) {
             const c = s.charCodeAt(i)
             if (c < 0x20 || c > 0x7e || c == 34 || c == 92) return false
