@@ -761,8 +761,13 @@ namespace r300_speaker {
      * Turn the volume up (positive) or down (negative) by `v`, from whatever R300 last
      * confirmed. set / change / read is the same trio Music offers for tempo, and it is what
      * makes "set" and "change" teachable against something the student can HEAR.
+     *
+     * The block text does NOT reuse Music's "change ... by" on purpose: side by side with
+     * "set speaker volume to", the two read as one sentence with a single word swapped — and
+     * the swapped word, the preposition, is the one least likely to be read carefully.
+     * "turn ... up or down by" states the relative move outright, so the two cannot be mixed up.
      */
-    //% blockId=r300_speaker_change block="change speaker volume by %v"
+    //% blockId=r300_speaker_change block="turn speaker volume up or down by %v"
     //% v.min=-100 v.max=100 v.defl=10
     //% weight=90
     //% group="Audio Actions"

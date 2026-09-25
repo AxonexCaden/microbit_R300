@@ -68,7 +68,7 @@ basic.pause(1000)
 r300_speaker.setVolume(80)
 led.toggle(0, 0)
 basic.pause(1000)
-// 11 — speaker: change by a step, from whatever R300 last confirmed.
+// 11 — speaker: turn it down by a step, from whatever R300 last confirmed.
 r300_speaker.changeVolumeBy(-30)
 led.toggle(0, 0)
 basic.pause(1000)

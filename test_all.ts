@@ -55,9 +55,9 @@
 //   18  show face cool                    a second value, so a stuck dropdown shows up
 //   19  set speaker volume to 30
 //   20  speaker volume reads 30           the level R300 CONFIRMED, not the one we asked for
-//   21  change speaker volume by 20
+//   21  turn speaker volume up or down by 20
 //   22  speaker volume reads 50
-//   23  change speaker volume by 100      50 + 100 has to clamp to 100, not run past it
+//   23  turn speaker volume up or down by 100  50 + 100 has to clamp to 100, not run past it
 //   24  speaker volume reads 100
 //   25  set speaker volume to 50          back to a sane level for the recording section
 //   26  don't allow talking over          off first, so the pair is a full round trip
@@ -223,9 +223,9 @@ function sweep(): void {
     r300_emotion.showFace(r300.Emoji.Cool)
     check(r300_status.accepted())                            // 18
 
-    // 19-25 — the speaker trio: set, change, read. Same shape as Music's set tempo / change
-    //         tempo by / tempo, with the top of the range exercised so the clamp is proven
-    //         rather than assumed. The "did it apply" steps poll, because the level is
+    // 19-25 — the speaker trio: set, turn up or down, read. Same shape as Music's set tempo /
+    //         change tempo by / tempo, with the top of the range exercised so the clamp is
+    //         proven rather than assumed. The "did it apply" steps poll, because the level is
     //         confirmed in a second message.
     r300_speaker.setVolume(30)
     check(r300_status.accepted())                            // 19
