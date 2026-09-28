@@ -58,7 +58,7 @@ Eight groups in the toolbox:
 | **R300 AI** | Talk to the robot's AI: `start` / `end an AI conversation` (what its own boot button does), and describe + record a routine so the robot replays it on a voice command. `moves recorded` and `routine was cut short?` report what the last take captured. Under **Talk Over**, allow or stop talking over the robot's reply — two absolute states, never a toggle |
 | **R300 Status** | `R300 is connected` and `the last command was accepted` — the two values a program can put in a variable or test in an `if` |
 | **R300 Music** | `play song` — one of the robot's three songs, by name. Music only: the robot does not drive itself while a song plays, and it stops hearing you until the song ends |
-| **R300 Camera** | `take a photo and ask` — one photo goes to the robot's vision model with your question, and nothing comes back to your program. `R300 starts looking for` (its label carries the object's **14-byte** limit) and `R300 saw …? for up to … seconds` are the pair that does answer: ask about one named object, then wait for a yes or no. All three need an AI conversation already open |
+| **R300 Camera** | `take a photo and ask` — one photo goes to the robot's vision model with your question, and `wait for the photo answer` returns what the model wrote as text on the LED. `R300 starts looking for` (its label carries the object's **32-byte** limit) and `R300 saw …? for up to … seconds` are the pair that answers yes/no directly. None of them needs an AI conversation — the vision endpoint is baked into the robot at boot |
 
 Two groups in one program:
 
@@ -82,8 +82,8 @@ These have no blocks — use the **JavaScript** tab:
 | `r300.ai(on)` | Conversation with the AI on/off — absolute; the boot button's other half |
 | `r300.volume(v)` | Volume, 0–100 |
 | `r300.song(ix)` | Play one of the three songs, 0–2; needs a robot built with the feature |
-| `r300.cam(q)` | Ask the robot's vision model about a photo; `q` optional, and needs an AI conversation already open |
-| `r300.detect(tg)` | Ask whether one named object is visible, and get a yes or no back. `tg` is 1–14 ASCII bytes with no `"` or `\` (the wire takes 32; R300 only answers 14); needs an AI conversation already open, and one look at a time |
+| `r300.cam(q)` | Ask the robot's vision model about a photo; `q` optional. The answer comes back as `cam_done` chunks and lands in `lastPhotoAnswer` (`photoSeq` marks a finished one); no conversation needed |
+| `r300.detect(tg)` | Ask whether one named object is visible, and get a yes or no back. `tg` is 1–32 ASCII bytes with no `"` or `\`; one look at a time; no conversation needed |
 | `r300.describe(name, desc)` | Name (1–24 chars of `[a-z0-9_]`) and describe a recording before taking it |
 | `r300.takeStart()` / `r300.takeFinish()` | Start / finish a recording |
 | `r300.send(op, pJson)` | Send any operation directly |
@@ -112,7 +112,8 @@ conversation. This is enough to follow the traffic or write a sender of your own
 
 One JSON object + one `\n` (a receiver also accepts `\r`), ASCII only, no
 whitespace, **253 bytes maximum** — a longer line is dropped with no log and no
-answer. The longest message any operation produces is about 127 bytes.
+answer. The longest message any operation produces is a `cam_done` chunk at
+about 233 bytes (9.11).
 
 ### 3. Envelope
 
@@ -177,11 +178,11 @@ at id 0 cannot be mistaken for a replay. The micro:bit keeps no record at all.
   the **same id**, up to two retries.
 - One request in flight per direction. An incoming request is answered
   immediately, never queued.
-- A request the **robot** raises (`vol_done` 9.6, `mcp_done` 9.7, `detect_done`
-  9.12) allows only **300 ms** for its ack, and is never retried — it is sent from
-  a thread of its own and the answer has to be there when it lands. One that
-  arrives late is logged on the robot and not sent again, so that operation's
-  second stage is lost with nothing to resend.
+- A request the **robot** raises (`vol_done` 9.6, `mcp_done` 9.7, `cam_done`
+  9.11, `detect_done` 9.12) allows only **300 ms** for its ack. `detect_done` is
+  resent with the same id until acked (up to a 16 s budget); the others are sent
+  once — a `cam_done` chunk lost in transit leaves a gap in the answer text
+  rather than a retry.
 - The robot probes `hello` every **500 ms** until answered, with no attempt
   limit — and if the answer says the versions disagree, it keeps probing (once
   a second) instead of giving up.
@@ -325,46 +326,52 @@ the two stack — and 62 is 3 beyond 61 for the same reason. 64 is the odd one a
 +73: `"1"` is three bytes where the bare `0` was one, and the two quote
 characters are what the gap is made of.
 
-**9.11 `cam_set`** — `{"q":"…"}`, or `{}`. Take a photo and put it to the robot's
-vision model with a question. `q` is optional: leave it out and the robot asks
-its own, which is why an empty question goes out as `{}` rather than `{"q":""}` —
-a literal empty `q` is refused.
+**9.11 `cam_ask` / `cam_done`** — `{"q":"…"}`, or `{}`. Take a photo and put it
+to the robot's vision model with a question, and get the answer back as text.
+`q` is optional: leave it out and the robot asks its own, which is why an empty
+question goes out as `{}` rather than `{"q":""}` — a literal empty `q` is refused.
 
 ```
-{"s":"mb","id":70,"t":"r","op":"cam_set","p":{},"ck":105}
-{"s":"mb","id":71,"t":"r","op":"cam_set","p":{"q":"What do you see?"},"ck":61}
-{"s":"mb","id":72,"t":"r","op":"cam_set","p":{"q":""},"ck":158}
-{"s":"mb","id":73,"t":"r","op":"cam_set","p":{"q":7},"ck":146}
-{"s":"mb","id":74,"t":"r","op":"cam_set","p":{"q":"hi"},"ck":113}
+{"s":"mb","id":70,"t":"r","op":"cam_ask","p":{},"ck":92}
+{"s":"mb","id":71,"t":"r","op":"cam_ask","p":{"q":"What do you see?"},"ck":48}
+{"s":"mb","id":72,"t":"r","op":"cam_ask","p":{"q":""},"ck":145}
+{"s":"mb","id":73,"t":"r","op":"cam_ask","p":{"q":7},"ck":133}
+{"s":"mb","id":74,"t":"r","op":"cam_ask","p":{"q":"hi"},"ck":100}
 ```
 
-R300 answers `ok` — accepted, not done — or `badarg`. There is no second reply
-after the ack, and nothing later reports that the photo was taken or what the
-model said about it.
+A whole exchange — the ack is **accepted**, not done, and the answer arrives
+seconds later on R300's own request (the same two-stage shape as 9.6, 9.7 and
+9.12):
 
-⚠️ **It needs an open AI conversation.** The vision endpoint's address reaches
-R300 from the server during the MCP handshake, so only a conversation that
-actually opened has one: press the robot's boot button, or run `start an AI
-conversation` (9.9) first. Nothing on this side can check it — the boot button
-changes the state without the micro:bit being told, and `ok` means accepted
-rather than applied — and the two states are otherwise indistinguishable,
-because a request on a robot with no conversation still answers `ok` and then
-fails in R300's own log alone.
+```
+{"s":"mb","id":70,"t":"r","op":"cam_ask","p":{"q":"What do you see?"},"ck":47}
+{"s":"r300","id":70,"t":"a","op":"cam_ask","p":{"st":"ok"},"ck":4}
+{"s":"r300","id":5,"t":"r","op":"cam_done","p":{"c":70,"i":0,"n":1,"t":"A bottle on the table."},"ck":156}
+{"s":"mb","id":5,"t":"a","op":"cam_done","p":{"st":"ok"},"ck":3}
+{"s":"r300","id":5,"t":"f","op":"cam_done","p":{"rt":4021},"ck":230}
+```
 
-⚠️ **Nothing comes back.** Not the answer, not even a note that the photo was
-taken: R300 speaks the answer and keeps it to itself. There is no ask-and-wait
-shape to build on this op.
+The answer arrives as **chunks**: `{"c":<ask id>,"i":k,"n":N,"t":"…"}` for
+k = 0…N-1, in order, each answered like any request. `c` is the id of the
+`cam_ask`; `i`/`n` say which chunk this is — join them in order to get the text.
+A call that fails after the ack sends **one frame instead of any chunk**:
+`{"c":<ask id>,"e":"capture"｜"timeout"｜"vlm"}`. Chunks are 150 bytes at most and
+there are at most 8 of them (~1.2 KB); a longer answer is cut there, with no
+marker of its own.
 
-⚠️ **The work takes about 9 seconds** — 20 in the worst case — and the photo
-stays on the robot's screen for about 5 of them. The wheels and hands keep
-working the whole time, because those go straight to the motor board and are
-never queued; a face or a song change is queued behind the photo instead, and
-lands when it finishes, up to 9 seconds late.
+⚠️ **No AI conversation is needed.** The vision endpoint's address is baked into
+R300 at boot — a server-supplied one only overrides the same address — so this
+works on a robot that has never been talked to.
+
+⚠️ **The work takes a few seconds** — about 3–6 typically, 20 in the worst case
+(the robot's vision call times out there). The wheels and hands keep working the
+whole time; nothing about the robot's own state changes.
 
 ⚠️ Keep the question to **ASCII**, like every other payload (2). The block
 escapes `"`, `\` and control characters for you, but a question in Chinese, or
 with an accent in it, is not covered by the vectors below and has not been on the
-bench.
+bench. The answer text rides the same checksum back — a model reply in another
+script cannot survive it, and that chunk is lost in transit.
 
 `badarg` covers a malformed payload, a `q` that is present but not a usable
 string, a unit with no camera, limited-charging mode, **and a vision call already
@@ -379,11 +386,11 @@ Test vectors, each checked against the rule in (7 #4):
 
 | Request | Answer |
 |---|---|
-| `{"s":"mb","id":70,"t":"r","op":"cam_set","p":{},"ck":105}` | `ok` — the robot's own question |
-| `{"s":"mb","id":71,"t":"r","op":"cam_set","p":{"q":"What do you see?"},"ck":61}` | `ok` |
-| `{"s":"mb","id":72,"t":"r","op":"cam_set","p":{"q":""},"ck":158}` | `badarg` — `q` present but empty |
-| `{"s":"mb","id":73,"t":"r","op":"cam_set","p":{"q":7},"ck":146}` | `badarg` — `q` is a number |
-| `{"s":"mb","id":74,"t":"r","op":"cam_set","p":{"q":"hi"},"ck":113}` | `ok` — a new id, so not the cached refusal |
+| `{"s":"mb","id":70,"t":"r","op":"cam_ask","p":{},"ck":92}` | `ok` — the robot's own question, then a `cam_done` with the answer |
+| `{"s":"mb","id":71,"t":"r","op":"cam_ask","p":{"q":"What do you see?"},"ck":48}` | `ok` |
+| `{"s":"mb","id":72,"t":"r","op":"cam_ask","p":{"q":""},"ck":145}` | `badarg` — `q` present but empty |
+| `{"s":"mb","id":73,"t":"r","op":"cam_ask","p":{"q":7},"ck":133}` | `badarg` — `q` is a number |
+| `{"s":"mb","id":74,"t":"r","op":"cam_ask","p":{"q":"hi"},"ck":100}` | `ok` — a new id, so not the cached refusal |
 
 The ids here are consecutive but the questions are not, so the `ck` column has no
 pattern to read the way 9.9's and 9.10's do. 70 → 71 is +212 because the id rises
@@ -412,7 +419,7 @@ never sends the `f` (6 — the side that sends the `r` is the side that closes i
 
 | Field | Meaning |
 |---|---|
-| `tg` | the object to look for: 1–**14 bytes** to be answered at all — the wire carries 32, but R300 answers 14 (see the byte cap below) — printable, no `"` and no `\` |
+| `tg` | the object to look for: 1–**32 bytes**, the link's own cap — printable, no `"` and no `\` |
 | `rs` | the verdict, exactly `"y"` or `"n"` — there is no third value |
 
 ⚠️ **Silence is a real outcome.** R300 sends **nothing at all** — no error code, no
@@ -437,32 +444,26 @@ is `badarg`: replacing it would leave the first program waiting for ever. A requ
 the robot never gets round to is abandoned, and that lapse is what makes room for
 the next one.
 
-⚠️ **It needs an open AI conversation**, the same door as `cam_set` (9.11): the
-question reaches the model through the session the MCP handshake opened, so a unit
-without one refuses it exactly as a unit with no camera does.
+⚠️ **No AI conversation is needed** — the same as `cam_ask` (9.11): R300 carries
+the vision endpoint's address from boot, so a unit straight from power-up answers
+the same as any other.
 
-⚠️ **The target has a byte cap, and it is 14 — not the wire's 32.** R300 does not
-look at the object itself. It injects it into a short question — `see <target>?` —
-and sends that to the server on the **wake-word channel**, which is the only
-device→server text channel there is (there is no local speech). The server refuses
-a text too long to be a wake word ("Detect is only for wake words, do not send long
-texts"), and nothing downstream of the injection can see that refusal, so R300
-refuses the request itself, with `badarg` at accept time, and sends nothing. Its two
-constants are 19 bytes for the injected text and 5 for the `see ` / `?` wrapper,
-which leaves **14 bytes for the object**: `thumbs up` (9 bytes) is answered, and a
-15th byte is `badarg` no matter how few words it took.
+⚠️ **The target has a byte cap, and it is the wire's own 32.** R300 does not look
+at the object itself: it builds a short question — `Is there a <target> in this
+image? Answer with only one word: yes or no.` — and sends it with the photo
+straight to the vision model (9.11's door). There is no server text limit on that
+path and no wake-word channel any more, so the only cap left is the link's own
+line; past it R300 refuses the request with `badarg` at accept time and sends
+nothing.
 
 Bytes are not characters — an accented letter costs 2, a Chinese character 3 — so
 six Chinese characters is 18 bytes. (A non-ASCII target is refused here whatever its
 length, for the checksum reason in the next warning; the byte count is what will
 matter if that is ever lifted.)
 
-The number is **measured, not published**: it comes from R300's two constants, and
-what was measured is the injected question — 19 bytes carried, 60 refused
-(2026-09-24 / 2026-09-23) — so 14 is a working number inside a bracket, and it is
-expected to move when R300 learns the server's real limit. The extension keeps its
-one copy in `MAX_ASK_TARGET_BYTES` (protocol.ts) and reports the same `badarg` R300
-would, so a program's answer does not depend on which side noticed first.
+The extension keeps its one copy in `MAX_TARGET_BYTES` (protocol.ts) and reports
+the same `badarg` R300 would, so a program's answer does not depend on which side
+noticed first.
 
 ⚠️ **A non-ASCII target is refused here, not by R300.** R300 measures the target in
 bytes like the cap above, but a target outside ASCII cannot survive the trip whatever
@@ -470,10 +471,10 @@ its length — the checksum in (4) is a byte sum, and the extension's is still c
 over UTF-16 code units (see 9.11). The block reports `badarg` without sending, rather
 than leaving a program to wait out its own timeout for an answer that cannot come.
 
-`badarg` covers a malformed payload, a target that is missing, empty, over 14 bytes
-or unsafe, a unit with no camera, limited-charging mode, a vision call already in
-flight, **and no live AI session** — a program cannot tell those apart. A refusal is
-cached against `(id, op)` (7 #4), so a retry needs a **new id**.
+`badarg` covers a malformed payload, a target that is missing, empty, over 32 bytes
+or unsafe, a unit with no camera, limited-charging mode, and a vision call already
+in flight — a program cannot tell those apart. A refusal is cached against
+`(id, op)` (7 #4), so a retry needs a **new id**.
 
 `noop` means that robot's firmware predates this pair — the same lesson as `ai_set`.
 
@@ -486,16 +487,14 @@ Test vectors, each checked against the rule in (7 #4):
 | `{"s":"mb","id":72,"t":"r","op":"detect_set","p":{},"ck":179}` | `badarg` — `tg` missing |
 | `{"s":"mb","id":73,"t":"r","op":"detect_set","p":{"tg":""},"ck":81}` | `badarg` — `tg` empty |
 | `{"s":"mb","id":74,"t":"r","op":"detect_set","p":{"tg":7},"ck":69}` | `badarg` — `tg` is a number |
-| `{"s":"mb","id":75,"t":"r","op":"detect_set","p":{"tg":"aaaaaaaaaaaaaa"},"ck":161}` | `ok` — 14 bytes, the last target that gets asked |
-| `{"s":"mb","id":76,"t":"r","op":"detect_set","p":{"tg":"aaaaaaaaaaaaaaa"},"ck":3}` | `badarg` — 15 bytes, one past the ask cap |
-| `{"s":"mb","id":77,"t":"r","op":"detect_set","p":{"tg":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"ck":214}` | `badarg` — 33 bytes, past the wire's own 32 as well |
+| `{"s":"mb","id":75,"t":"r","op":"detect_set","p":{"tg":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"ck":115}` | `ok` — 32 bytes, the last target that gets asked |
+| `{"s":"mb","id":76,"t":"r","op":"detect_set","p":{"tg":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"ck":213}` | `badarg` — 33 bytes, one past the wire's cap |
 
 70 → 71 is +92 because the id rises by 1 and `red ` adds 347, and 348 wraps to 92.
 Everything from 72 on needs a hand-built line: the extension refuses a target that
-is empty, over 14 bytes, unsafe or non-ASCII before it puts anything on the wire, in
-the same way that 9.11's `{"q":""}` cannot be reached from its block. The last three
-rows mark the boundary — 14 is answered, 15 is not, and 33 adds the wire's own cap
-on top (R300 would have refused 15 by itself; see the byte cap above).
+is empty, over 32 bytes, unsafe or non-ASCII before it puts anything on the wire, in
+the same way that 9.11's `{"q":""}` cannot be reached from its block. The last two
+rows mark the boundary — 32 bytes is answered, 33 is not.
 
 ### 10. Timing summary
 
@@ -504,6 +503,8 @@ on top (R300 would have refused 15 by itself; see the byte cap above).
 | `hello` | 500 ms | 300 ms | never |
 | `live` | 500 ms | 300 ms | after 2 consecutive misses → handshake again |
 | requests | one at a time | 500 ms | after 2 retries with the same id |
+| `detect_done` | one per look | 300 ms | resent (same id) until acked, up to 16 s |
+| `cam_done` chunks | in order, one per photo | 300 ms | never — a lost chunk leaves a gap |
 
 ### 11. Errors and limits
 
@@ -512,20 +513,18 @@ on top (R300 would have refused 15 by itself; see the byte cap above).
 
 253 bytes per line maximum; both serial buffers are 254 bytes.
 
-A detection target is **14 bytes**, not the 32 the wire would carry: past 14 R300
-refuses the request at accept time with `badarg`, because it can only ask the server
-about that much (9.12). Bytes, not characters — an Arabic letter costs 2 and a CJK
-character 3, so a target that looks short can be over. The extension refuses the
-same targets locally and reports the same `badarg`, so the block's answer does not
-depend on which side noticed; the number itself is a measured one and is expected to
-move.
+A detection target is **32 bytes**, the wire's own cap: past it R300 refuses the
+request at accept time with `badarg` (9.12). Bytes, not characters — an Arabic
+letter costs 2 and a CJK character 3, so a target that looks short can be over. The
+extension refuses the same targets locally and reports the same `badarg`, so the
+block's answer does not depend on which side noticed.
 
 Not every failure has a code. A two-stage operation is acked long before it is
-finished, and the second stage can never arrive: a detection whose question the
-model answers in words instead of running (9.12) expires on the robot's own timer
-and sends nothing at all. Nothing is retried and nothing is refused — the program
-sees only the end of its own wait, which is why a looking block has a timeout to
-fall back on.
+finished, and the second stage can be missing entirely: a detection whose reply
+carries neither "yes" nor "no" sends nothing at all (9.12) — no error, no verdict —
+while a failed photo call answers with an error frame instead of text (9.11).
+Nothing is retried and nothing is refused — the program sees only the end of its
+own wait, which is why a looking block has a timeout to fall back on.
 
 ---
 
@@ -558,6 +557,7 @@ This repository is itself a MakeCode extension.
 | `protocol.ts` | Protocol layer: checksum, envelope, replies |
 | `r300.ts` | The block groups and the `r300` API; connects at power-up |
 | `test.ts` | Local test — compiled only when this repo is the top-level project |
+| `vision_only.ts` | VLM-only bench: the camera blocks with no AI conversation, built via `testFiles` |
 | `test_2.ts` · `test_emotion.ts` · `test_mcp_high_five.ts` | Bench demos, copied into MakeCode by hand |
 | `legacy/` | Retired MicroPython version, kept for reference |
 | `built/` | Build output — flash `built/binary.hex` |

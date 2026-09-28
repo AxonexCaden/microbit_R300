@@ -13,7 +13,7 @@
         "r300.ts"
     ],
     "testFiles": [
-        "r300_demo.ts"
+        "vision_only.ts"
     ],
     "public": true,
     "supportedTargets": [

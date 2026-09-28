@@ -50,6 +50,9 @@ namespace r300 {
     // give-up path is only reached by a sender wedged somewhere other than its wait loop.
     const kStopWaitMs = 300
     let nextId = 0
+    // The id of the most recent sendOne() attempt. cam() reads it to arm the cam_done match:
+    // the chunks name the id, and the ack that promises them does not carry it back.
+    let lastSentId = -1
     let waitId = -1
     let waitOp = ""
     let waitState = ""
@@ -123,6 +126,7 @@ namespace r300 {
 
     function sendOne(op: string, pJson: string): string {
         const id = nextId
+        lastSentId = id
         // Same 0-99 id space as R300's senders; a retry reuses the id it is retrying.
         nextId = nextId >= 99 ? 0 : nextId + 1
         let last = "timeout"
@@ -436,34 +440,31 @@ namespace r300 {
     }
 
     /**
-     * Take a photo and put it to the vision model with a question: what the model does through its
-     * own take-photo tool, except a program starts it and nobody has to speak.
+     * Take a photo and put it to the vision model with a question. The answer comes BACK here,
+     * as R300's own cam_done request (README.md 9.11): it lands chunk by chunk in lastPhotoAnswer
+     * and photoSeq moves when the answer is complete — student-facing "wait for the photo answer"
+     * is what waits on it, the same shape as saw() over lastDetectAnswer.
      * q is optional — leave it out and R300 asks its own default ("What do you see?"), which is why
      * an empty question is sent as `{}` rather than `{"q":""}`: R300 refuses a literal empty q.
      * Anything else in q is JSON-escaped first (escapeJson), because a `"` or a `\` in the text
      * would otherwise break the payload and R300 would drop the line without an ack.
-     * "ok" means accepted, not done — and NOTHING comes back for this op: no answer, no "the photo
-     * finished", no image. R300 speaks the answer and logs it; this side never sees it, so there is
-     * no ask-and-wait shape to build.
-     * ⚠️ It needs an OPEN AI CONVERSATION (ai_set, or the robot's own boot button): the vision
-     * endpoint's URL reaches R300 from the server during the MCP handshake, so only a conversation
-     * that actually opened has it. That cannot be checked from here — the boot button changes the
-     * state behind our back and "ok" means accepted rather than applied, so a flag kept on this
-     * side would be confidently wrong. On a robot that was never connected the op still answers ok
-     * and then fails silently in R300's log.
-     * ⚠️ The ack lands in milliseconds but the work takes ~9 s (~20 s worst case), and the photo
-     * sits on the robot's screen for about 5 s. The wheels and hands keep working throughout —
-     * leg_set/arm_set go straight to the motor board and are never queued — but emo_set and
-     * song_set are queued behind the photo and land when it finishes, up to ~9 s late.
+     * "ok" means accepted, not done — NOTHING has been photographed yet when it answers: the
+     * capture runs on R300's own worker, and the text (or an error code) follows seconds later
+     * as R300's own request.
+     * ⚠️ No AI conversation is needed: R300 carries a default vision endpoint address from boot,
+     * and a server-supplied one only overrides the same address. The op works on a robot that has
+     * never been talked to — "noop" means this R300's firmware predates cam_ask.
      * "badarg" covers: no camera on this unit, limited charging mode, a vision call already in
-     * flight, and a q that is present but not a usable string. "noop" means this R300's firmware
-     * predates cam_set.
+     * flight, and a q that is present but not a usable string.
      */
     //% blockId=r300_cam block="take a photo and ask %q"
     //% blockHidden=true
     //% weight=91
     export function cam(q: string): string {
-        return send("cam_set", q.length == 0 ? "{}" : "{\"q\":\"" + escapeJson(q) + "\"}")
+        const r = send("cam_ask", q.length == 0 ? "{}" : "{\"q\":\"" + escapeJson(q) + "\"}")
+        // The chunks will name this id; arm the match once the ack promises they are coming.
+        if (r == "ok") notePhotoAsk(lastSentId)
+        return r
     }
 
     /**
@@ -473,15 +474,14 @@ namespace r300 {
      * what waits on that pair; this function only arms the question.
      * "ok" means R300 accepted the request, not that it has looked yet.
      * ⚠️ ONE AT A TIME: a second detect_set while the first is still unanswered is badarg, because
-     * replacing it would leave the first program waiting forever. R300 also lapses a request of
-     * its own accord after ~30 s (UNMEASURED) if the model never gets round to it.
-     * ⚠️ Same door as cam_set: it needs an OPEN AI CONVERSATION (ai_set, or the robot's boot
-     * button), and that cannot be checked from here. No camera, limited-charging mode, a vision
-     * call already in flight and a missing session all come back as the same badarg.
-     * ⚠️ SILENCE IS A REAL OUTCOME. If the model answers in words instead of calling its tool, or
-     * its reply contains neither the word yes nor the word no, R300 sends NOTHING AT ALL -- no
-     * error code, no detect_done -- so whoever waits for an answer must time out on its own.
-     * The target must be usable: empty, over MAX_ASK_TARGET_BYTES, or carrying a quote, a
+     * replacing it would leave the first program waiting forever.
+     * ⚠️ No AI conversation is needed — the same as cam() above: R300 carries the vision
+     * endpoint's address from boot. No camera, limited-charging mode and a vision call already
+     * in flight all come back as the same badarg.
+     * ⚠️ SILENCE IS A REAL OUTCOME. If the reply contains neither the word yes nor the word no,
+     * or the vision call fails, R300 sends NOTHING AT ALL -- no error code, no detect_done -- so
+     * whoever waits for an answer must time out on its own.
+     * The target must be usable: empty, over MAX_TARGET_BYTES, or carrying a quote, a
      * backslash, a control character or anything non-ASCII is refused HERE, with the same "badarg"
      * R300 would send, and nothing goes on the wire (isDetectTarget). "noop" means this R300's
      * firmware predates detect_set.
@@ -1068,20 +1068,48 @@ namespace r300_camera {
      * Take a photo and send it to R300's vision model with a question. Type the question in the
      * block, or leave the field alone to let R300 ask its own ("What do you see?").
      *
-     * ⚠️ The robot has to be in a conversation with its AI first — press its boot button, or use
-     * "start an AI conversation". Without one, this block still reports success and simply does
-     * nothing: R300 mentions it only in its own log, so a program cannot tell.
+     * The answer comes back HERE, not out loud: put "wait for the photo answer" after this block
+     * and it returns what the model wrote. Nothing is spoken, the mic is not used, the robot stays
+     * idle, and no AI conversation is needed — the photo goes straight to the vision model, so
+     * this works on a robot straight from power-up.
      *
-     * ⚠️ Nothing comes back to your program — not the answer, not even a note that the photo was
-     * taken. R300 says the answer out loud and keeps it to itself. Expect it to take about nine
-     * seconds, and note that anything you do to the robot's face or music while it works waits
-     * its turn; the wheels and hands do not wait.
+     * ⚠️ This block only ASKS. "The last command was accepted" means R300 took the request; the
+     * answer arrives a few seconds later (about 3–6s, 20s worst case) and the wait block is what
+     * collects it. A failed call comes back as an empty answer, so an empty answer is "no
+     * answer", not "no" — use "R300 starts looking for" when the question is yes/no.
      */
     //% blockId=r300_camera_ask block="take a photo and ask %q"
     //% weight=100
     //% q.defl="What do you see?"
     export function takePhoto(q: string): void {
         r300.cam(q)
+    }
+
+    /**
+     * Wait for the answer to the photo started by "take a photo and ask", then return it.
+     * Returns the text the vision model wrote, or "" when the wait ran out or the call failed —
+     * the two cannot be told apart from here, and a program is better off treating either as
+     * "no answer".
+     *
+     * ⚠️ Put it right after the ask, and once per ask: it waits for the NEXT completed answer,
+     * so a second wait with no ask in between sits out its whole timeout and says "". The
+     * robot's own ceiling is about 20 seconds (its vision call's timeout), which is why the
+     * default covers it.
+     */
+    //% blockId=r300_camera_wait block="wait for the photo answer up to %seconds seconds"
+    //% weight=85
+    //% seconds.min=1 seconds.max=30 seconds.defl=20
+    export function waitPhotoAnswer(seconds: number): string {
+        // The counter, not the answer: lastPhotoAnswer still holds the PREVIOUS answer, so
+        // reading it would return the last photo's text instantly. A new answer is exactly a
+        // moved counter — the same guard saw() uses.
+        const before = r300.photoSeq
+        const deadline = control.millis() + r300.clamp(Math.round(seconds), 1, 30) * 1000
+        while (control.millis() < deadline) {
+            if (r300.photoSeq != before) return r300.lastPhotoAnswer
+            basic.pause(50)
+        }
+        return ""
     }
 
     // A target the robot cannot be asked about is refused here, and the limit is SHOWN rather than
@@ -1091,9 +1119,9 @@ namespace r300_camera {
     // badarg for this same target when it is the one to catch it, and a program checking that
     // answer should not get a different one depending on who looked first.
     function refuseTarget(target: string): boolean {
-        if (r300.utf8Bytes(target) <= r300.MAX_ASK_TARGET_BYTES) return false
+        if (r300.utf8Bytes(target) <= r300.MAX_TARGET_BYTES) return false
         r300.setLastReply("badarg")
-        basic.showNumber(r300.MAX_ASK_TARGET_BYTES)
+        basic.showNumber(r300.MAX_TARGET_BYTES)
         basic.pause(1000)
         basic.clearScreen()
         return true
@@ -1105,12 +1133,10 @@ namespace r300_camera {
      * robot has taken the request, long before anything has been seen. Put "R300 saw ...?" after
      * it when the program actually wants the answer.
      *
-     * ⚠️ Keep the object to 14 BYTES — that is roughly 14 letters, and the block shows 14 on the
-     * LED if you go past it. The limit is not ours: the robot puts the object into a short question
-     * it sends to the server as a wake word, and the server refuses a longer one, so the robot
-     * turns long targets away itself. BYTES ARE NOT CHARACTERS — an accented letter costs 2 and a
-     * Chinese character 3, so six Chinese characters is 18 bytes and is refused even though it
-     * looks short. It is a measured limit, not a rule of the language, and it may change.
+     * ⚠️ Keep the object to 32 BYTES — the link's own line limit is the only cap left, and the
+     * block shows 32 on the LED if you go past it. BYTES ARE NOT CHARACTERS — an accented letter
+     * costs 2 and a Chinese character 3, so six Chinese characters is 18 bytes and is refused
+     * even though it looks short.
      *
      * ⚠️ Accented and non-English letters are refused as well, whatever their length: the link
      * between the two boards cannot carry them yet. Unlike the length limit, that refusal shows
@@ -1118,18 +1144,16 @@ namespace r300_camera {
      * and since nothing was sent, there is no answer either. "The last command was accepted" is
      * what tells you.
      *
-     * ⚠️ It needs a conversation with the AI already open — press the robot's boot button, or use
-     * "start an AI conversation". Without one the request is refused, and the block cannot tell
-     * you: check "the last command was accepted" if it matters.
+     * ⚠️ No AI conversation is needed — the robot carries the vision endpoint's address from
+     * boot, so this works straight after power-up.
      *
      * ⚠️ One look at a time. Asking about a second object before the first has answered is
-     * refused, because replacing the first question would leave it unanswered for good. A look
-     * the robot never gets round to is abandoned after about thirty seconds.
+     * refused, because replacing the first question would leave it unanswered for good.
      *
      * ⚠️ Type the object the same way here and in "R300 saw ...?": the answer comes back tagged
      * with the object it was about, and the waiting block matches on it.
      */
-    //% blockId=r300_camera_start block="R300 starts looking for %target (max 14 bytes)"
+    //% blockId=r300_camera_start block="R300 starts looking for %target (max 32 bytes)"
     //% weight=95
     //% target.defl="apple"
     export function startLooking(target: string): void {
@@ -1140,26 +1164,24 @@ namespace r300_camera {
     /**
      * Wait for the robot to answer the look started above, then say whether it saw the object.
      * False means it answered "no" — or that no answer came at all within the seconds you chose,
-     * which includes the robot giving up on the look. R300 sends nothing when its model answers in
-     * words instead of looking, so the two cannot be told apart from here, and a program is better
-     * off treating either one as "not seen".
+     * which includes a look the robot could not decide. R300 sends nothing when the reply carries
+     * neither yes nor no, so the two cannot be told apart from here, and a program is better off
+     * treating either as "not seen".
      *
      * ⚠️ Use it after "R300 starts looking for", with the object typed THE SAME WAY in both
      * blocks. This block waits for an answer about the object it names, so a target spelled
      * differently in the two waits out the whole timeout and says false. With no look started
      * before it, it does the same: there is no question for an answer to belong to.
      *
-     * ⚠️ An object past the 14-byte limit is refused by the looking block, so no question was ever
-     * asked and there is nothing for this one to hear. It says false at once and shows 14 on the
+     * ⚠️ An object past the 32-byte limit is refused by the looking block, so no question was ever
+     * asked and there is nothing for this one to hear. It says false at once and shows 32 on the
      * LED, rather than waiting out the timeout for an answer that was never coming.
      *
      * ⚠️ The waiting happens right here, so nothing else in this stack runs until it is over —
-     * other button handlers keep working. About nine seconds is typical, and twenty is the robot's
-     * own worst case for the vision call alone. Thirty is the longest the question can stay alive
-     * on the robot, so a wait past that only sits on a question that is already dead — but note
-     * that the two can add up: a look the robot begins at the end of its thirty seconds can still
-     * answer about twenty seconds later, and by then this block will have given up. Its false is
-     * the honest answer either way, since nothing here can tell a late yes from a silent no.
+     * other button handlers keep working. A few seconds is typical (about 3–6), and twenty is
+     * the robot's own ceiling — its vision call's timeout. Past that a look sends nothing at
+     * all, and this block's false is the honest answer either way, since nothing here can tell
+     * "no" from "never answered".
      */
     //% blockId=r300_camera_saw block="R300 saw %target? for up to %seconds seconds"
     //% weight=90

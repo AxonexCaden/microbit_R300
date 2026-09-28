@@ -1,4 +1,4 @@
-// test_all.ts — bench sweep over EVERY block the R300 extension publishes (29 of them, 46 steps).
+// test_all.ts — bench sweep over EVERY block the R300 extension publishes (30 of them, 46 steps).
 //
 // Copy this whole file into a MakeCode micro:bit project that has the R300 extension added and
 // switch to the Blocks view: every call below is one of the blocks a student can drag out, so
@@ -24,11 +24,12 @@
 //
 // SIDE EFFECTS: the recording section leaves a routine on the robot, REPLACING whatever
 // mcp_microbit_1 held before; the conversation steps open a conversation with the AI and then
-// try to close it again; the camera steps send a real photo to the robot's vision model and it
-// answers OUT LOUD, which takes about nine seconds; the look step leaves the robot armed for up
-// to thirty seconds if the model never runs the detection; talk-over is left ENABLED (step 27
-// has the last word on it); the music step leaves a song playing, which mutes the robot's own mic
-// until it ends; and the robot is left stopped, at volume 50, face happy.
+// try to close it again; the camera step sends a real photo to the robot's vision model and the
+// answer comes back to the micro:bit a few seconds later — nothing is spoken; the look step can
+// stay unanswered for up to ~20 s if the reply carries no yes/no, and then sends nothing at all;
+// talk-over is left ENABLED (step 27 has the last word on it); the music step leaves a song
+// playing, which mutes the robot's own mic until it ends; and the robot is left stopped, at
+// volume 50, face happy.
 //
 // Not part of a student's project: it only ever lives in pxt.json's testFiles. Do not hold A
 // while resetting to run it — that is the USB-serial escape hatch, it skips the serial redirect,
@@ -74,12 +75,12 @@
 //   37  play song ActiveSummer            music only — the robot does not drive itself
 //   38  end the AI conversation           deterministic from the closed state
 //   39  start an AI conversation          leaves it OPEN; see the note at the step
-//   40  take a photo and ask              needs the conversation 39 opened; the robot answers
-//                                        out loud, and about nine seconds pass before step 41
+//   40  take a photo and ask              no conversation needed; the answer returns as text
+//                                        and the wait drains it before step 41
 //   41  R300 starts looking for apple     one named object, the same door the photo uses
 //   42  R300 saw apple? for up to 1 s     the timeout path: false unless an answer beats it
 //   43  R300 starts looking for nothing   refused HERE — accepted? must go false
-//   44  a 15-byte object                  refused HERE too, on the byte cap — 14 shows on the LED
+//   44  an object past 32 bytes           refused HERE too — 32 shows on the LED
 //   45  R300 saw that same 15-byte object  refused before the wait: false at once, not after 30 s
 //   46  stop driving now                  park the robot
 
@@ -297,27 +298,27 @@ function sweep(): void {
     r300_ai.startConversation()
     check(r300_status.accepted())                            // 39
 
-    // 40 — the photo, and the only step whose dependency the extension cannot check for itself:
-    //      it needs a conversation that actually OPENED, because the vision endpoint's address
-    //      reaches R300 from the server during the handshake. Step 39 just opened one, so this is
-    //      the one place in the sweep where that holds — and the block reports nothing about it.
-    //      The pause is for the handshake rather than the ack: an address that has not arrived
-    //      yet makes the photo pointless, so ask a moment late rather than immediately. If this
-    //      step fails on a robot whose conversation really did open, raise the pause.
-    //      WATCH AND LISTEN: the robot takes about nine seconds over it and answers OUT LOUD.
-    basic.pause(3000)
+    // 40 — the photo. No conversation is needed any more: the vision endpoint's address is baked
+    //      into R300 at boot (a session would only refresh the same address), so this works on a
+    //      robot that has never been talked to. The answer comes back to the MICRO:BIT, not out
+    //      loud, a few seconds later — the wait below drains it, which also keeps step 41 honest:
+    //      only one vision call runs at a time on R300, so a look asked while this photo is still
+    //      in flight would come back badarg.
+    //      WATCH: nothing on the robot; the wait ends when the answer lands (it is not a check).
     r300_camera.takePhoto("What do you see?")
     check(r300_status.accepted())                            // 40
+    if (r300_status.accepted()) r300_camera.waitPhotoAnswer(20)
 
-    // 41 — R300 starts looking for apple. The same door 40 used, so it needs the conversation 39
-    //      opened. This block only ASKS: the verdict comes back as a request of its own, seconds
-    //      later, and the extension latches it when it arrives. Nothing about it shows up here.
+    // 41 — R300 starts looking for apple. The same vision door 40 used — no conversation needed
+    //      here either. This block only ASKS: the verdict comes back as a request of its own,
+    //      seconds later, and the extension latches it when it arrives. Nothing about it shows up
+    //      here; the wait is step 42's job.
     r300_camera.startLooking("apple")
     check(r300_status.accepted())                            // 41
 
     // 42 — R300 saw apple? for up to 1 seconds. The assertion is `false`, and that is the part of
     //      this block a bench can actually prove: no verdict can arrive inside one second — the
-    //      vision call alone runs about nine, as step 40 showed — so the wait has to end by itself
+    //      vision call alone runs a few seconds, as step 40 showed — so the wait has to end by itself
     //      and say so. Whether this robot can see an apple is NOT something this file can know,
     //      and the step does not claim to; what it proves is that a wait with no answer returns.
     //      The matrix stays on 41 for that second: the wait is inside the block, and the step
@@ -336,15 +337,15 @@ function sweep(): void {
     r300_camera.startLooking("")
     check(!r300_status.accepted())                           // 43
 
-    // 44 — the BYTE cap, which is the refusal a student is likelier to meet than the empty one: "the
-    //      big red car" is 15 bytes, one past what R300 will ask the server about, and it is ordinary
-    //      English no word count would flag. Same shape as 43 — accepted? goes false — plus the one
-    //      thing 43 has not got: the block shows 14 on the LED, which is the only way it can say WHAT
-    //      it refused. WATCH for the 14; it holds a second. The extension catches this before the
-    //      wire, so nothing goes out and there is no ack, exactly as in 43: what this step proves is
-    //      that the guard is there at all, because the numbers on the LED and in R300's log are the
-    //      only other places it could show up.
-    r300_camera.startLooking("the big red car")
+    // 44 — the BYTE cap, which is the refusal a student is likelier to meet than the empty one:
+    //      "the big red car with the shiny wheels" is 37 bytes, past the wire's own 32, and it is
+    //      ordinary English no word count would flag. Same shape as 43 — accepted? goes false —
+    //      plus the one thing 43 has not got: the block shows 32 on the LED, which is the only way
+    //      it can say WHAT it refused. WATCH for the 32; it holds a second. The extension catches
+    //      this before the wire, so nothing goes out and there is no ack, exactly as in 43: what
+    //      this step proves is that the guard is there at all, because the numbers on the LED and
+    //      in R300's log are the only other places it could show up.
+    r300_camera.startLooking("the big red car with the shiny wheels")
     check(!r300_status.accepted())                           // 44
 
     // 45 — the waiting block carries the same target. It has the same guard on purpose: a student
@@ -352,8 +353,8 @@ function sweep(): void {
     //      wait on a question that was never asked could only burn its whole timeout to arrive at
     //      the same false. So the assertion is a false returned AT ONCE — thirty seconds are passed
     //      deliberately, so that a missing guard shows up as a stall to write down rather than as a
-    //      silent pass. WATCH: the 14 on the LED again, immediately, from the same guard.
-    const sawLongTarget = r300_camera.saw("the big red car", 30)
+    //      silent pass. WATCH: the 32 on the LED again, immediately, from the same guard.
+    const sawLongTarget = r300_camera.saw("the big red car with the shiny wheels", 30)
     check(!sawLongTarget)                                    // 45
 
     // 46 — park it. The stop and the hands land at once; the face change is queued behind step

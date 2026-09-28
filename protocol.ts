@@ -6,27 +6,12 @@ namespace r300 {
     export const SELF_TAG = "mb"
     // R300's line buffer is 254 bytes including the terminator (the MakeCode maximum).
     export const MAX_LINE_BYTES = 253
-    // Longest detect_set target that fits the WIRE (README.md 9.12), in BYTES: it is what keeps
-    // the detect_done payload inside R300's own notifier cap. Keep in lockstep with R300's
-    // kMaxTarget -- the same target must be answered the same way whether or not the link is up.
-    // It is the CEILING, not today's limit: MAX_ASK_TARGET_BYTES below binds first.
+    // Longest detect_set target, in BYTES: it is what keeps the detect_done payload inside R300's
+    // own notifier cap. Keep in lockstep with R300's kMaxTarget -- the same target must be answered
+    // the same way whether or not the link is up. It is also the only cap left: since 2026-09-28
+    // R300 carries the target on the vision prompt itself (README.md 9.12), so the old 14-byte ask
+    // limit went with the wake-word channel it lived on.
     export const MAX_TARGET_BYTES = 32
-    // Longest detect_set target R300 can actually SERVE today, in BYTES, and the difference
-    // between "accepted" and "answered" (README.md 9.12). R300 puts the target into a short
-    // question injected on the WAKE-WORD channel -- the server's channel, not R300's preference --
-    // and the server refuses a long text there out loud ("Detect is only for wake words, do not
-    // send long texts"). Nothing downstream can see that refusal, so R300 refuses the request
-    // instead. So this mirrors R300's own arithmetic, not a preference of ours:
-    //     kMaxAskBytes (19) - kAskWrapper (5) = 14
-    // "see " (4) + the target + "?" (1) is what R300 injects. ⚠️ THE NUMBER IS EXPECTED TO MOVE:
-    // R300's 19 is a proxy for a server limit still being measured (19 bytes carried, 60 refused,
-    // as of 2026-09-24), and R300 raises kMaxAskBytes when the real bracket closes. Nothing else
-    // can compute it from here, so 14 is repeated as prose in the startLooking block label, in the
-    // two camera blocks' doc comments and in README.md 9.12 -- move those together with this line.
-    // It disappears entirely if R300
-    // ever carries the target on the vision prompt instead of the wake-word channel, and then
-    // MAX_TARGET_BYTES is the only limit left.
-    export const MAX_ASK_TARGET_BYTES = 14
     // What R300 logs as `ex`. Keep in step with pxt.json's "version", and keep
     // it inside 23 chars ([A-Za-z0-9._+-]) -- R300 truncates past that and the
     // test vectors in README.md assume it.
@@ -84,6 +69,25 @@ namespace r300 {
     export let lastDetectTarget = ""
     export let lastDetectAnswer = ""
     export let detectSeq = 0
+
+    // The last photo answer R300 reported, from its cam_done (README.md 9.11): the text the
+    // vision model wrote for the most recent camera ask, joined back together from its chunks,
+    // plus the error code when the call failed instead ("" then). photoSeq moves once per
+    // finished answer -- error or text -- for the same reason detectSeq exists: the fields
+    // alone cannot tell a NEW answer from the previous one.
+    export let lastPhotoAnswer = ""
+    export let lastPhotoError = ""
+    export let photoSeq = 0
+
+    // The cam_ask the chunks in flight belong to, and the chunks themselves. notePhotoAsk()
+    // arms the match the moment the ask's ack lands; R300 enforces one vision call at a time,
+    // so one id is all there is to track. -1 between answers.
+    let photoAskId = -1
+    let photoChunks: string[] = []
+    export function notePhotoAsk(id: number): void {
+        photoAskId = id
+        photoChunks = []
+    }
 
     // Called for every ack that survives the envelope, ck and v checks, so a sender can be
     // woken by the reply it is waiting for. A no-op until r300.ts's sender installs it — a
@@ -153,7 +157,7 @@ namespace r300 {
     // units, so a target in Chinese costs 3 bytes per character and one in Arabic 2, and a target
     // that looks short on screen can be over the cap with nothing about it looking wrong.
     // ⚠️ Today every string that gets this far is ASCII, because isDetectTarget refuses anything
-    // above 0x7e -- so this and .length agree, and it is here so that MAX_ASK_TARGET_BYTES keeps
+    // above 0x7e -- so this and .length agree, and it is here so that MAX_TARGET_BYTES keeps
     // meaning BYTES on the day that refusal is lifted (README.md 9.11, the byte-sum work).
     export function utf8Bytes(s: string): number {
         let n = 0
@@ -174,11 +178,8 @@ namespace r300 {
     // refuses those too, because the same target has to be answered the same way whether or not
     // the link is up.
     //
-    // The cap is MAX_ASK_TARGET_BYTES, not MAX_TARGET_BYTES: R300 can carry 32 bytes on the wire
-    // but can only ask the server about 14, and the smaller one is the honest answer to "will this
-    // work?". Both are checked rather than only the smaller one, because they are expected to swap
-    // places: the ask cap is the one that moves, and a target past the wire's 32 bytes has to stay
-    // refused however far it moves.
+    // The cap is MAX_TARGET_BYTES, the wire's own 32 bytes: R300 now puts the target on the
+    // vision prompt itself, so what used to be a measured 14 is gone (README.md 9.12).
     //
     // ⚠️ It is deliberately STRICTER than R300 in one place: anything at or above 0x80, i.e. any
     // non-ASCII target, is refused here and would be accepted there. A non-ASCII target cannot
@@ -190,8 +191,7 @@ namespace r300 {
     // Lift this with the byte-sum work; R300 alone takes up to MAX_TARGET_BYTES of UTF-8.
     export function isDetectTarget(s: string): boolean {
         if (s.length == 0) return false
-        if (utf8Bytes(s) > MAX_ASK_TARGET_BYTES) return false
-        if (s.length > MAX_TARGET_BYTES) return false
+        if (utf8Bytes(s) > MAX_TARGET_BYTES) return false
         for (let i = 0; i < s.length; i++) {
             const c = s.charCodeAt(i)
             if (c < 0x20 || c > 0x7e || c == 34 || c == 92) return false
@@ -199,7 +199,7 @@ namespace r300 {
         return true
     }
 
-    // JSON escaping for a payload that carries free text (cam_set's q). A `"` or a `\` in the
+    // JSON escaping for a payload that carries free text (cam_ask's q). A `"` or a `\` in the
     // text would otherwise end the string early or escape the character after it, and a raw
     // newline would split the line in two — either way R300 receives a broken line and drops it
     // with NO ack, so the program reports a timeout for a request that never left, and nothing
@@ -308,12 +308,11 @@ namespace r300 {
             return buildLine("a", id, op, "{\"st\":\"ok\"}")
         }
         // R300's verdict on a detect_set the program armed (README.md 9.12) -- its own request,
-        // arriving long after the ack, the same two-stage shape as vol_done above. Like the other
-        // notifier ops it waits only 300ms for this ack and never retries it, so this branch is
+        // arriving long after the ack, the same two-stage shape as vol_done above. It waits only
+        // 300ms for this ack but RESENDS until it gets one (up to a 16s budget), so this branch is
         // not optional: a request landing here with nothing to catch it falls through to "noop",
-        // R300 logs the whole two-stage path as failed, and the student's program waits out its
-        // own timeout for an answer that did arrive. On the RX thread, so it is answered even
-        // while sendOne() is sitting in its wait loop.
+        // R300 logs the whole two-stage path as failed, and the retries keep coming until the
+        // budget dies. On the RX thread, so it is answered even while sendOne() waits.
         if (op == "detect_done") {
             const p = msg["p"]
             if (p !== undefined && p !== null && typeof p["tg"] == "string" &&
@@ -321,6 +320,42 @@ namespace r300 {
                 lastDetectTarget = p["tg"]
                 lastDetectAnswer = p["rs"]
                 detectSeq++
+            }
+            return buildLine("a", id, op, "{\"st\":\"ok\"}")
+        }
+        // R300's answer to a cam_ask (README.md 9.11): the vision model's text as ordered chunks
+        // -- {"c":ask id,"i":k,"n":N,"t":"..."} closed by k == N-1 -- or, instead of any
+        // chunk, one {"c":ask id,"e":"capture|timeout|vlm"}. Same two-stage shape as the pair
+        // above, with two differences: every frame carries `c`, the id of the ask it answers, so a
+        // straggler from an abandoned ask cannot be mistaken for this one; and R300 gives each
+        // chunk 300ms for its ack and then moves on regardless -- a chunk lost in transit leaves a
+        // gap in the joined text rather than a retry. Acked like every request, matches or not.
+        if (op == "cam_done") {
+            const p = msg["p"]
+            if (p !== undefined && p !== null && typeof p["c"] == "number" &&
+                p["c"] == photoAskId) {
+                if (typeof p["e"] == "string") {
+                    lastPhotoAnswer = ""
+                    lastPhotoError = p["e"]
+                    photoAskId = -1
+                    photoSeq++
+                } else if (typeof p["i"] == "number" && typeof p["n"] == "number" &&
+                           typeof p["t"] == "string" && p["n"] >= 1 &&
+                           p["i"] >= 0 && p["i"] < p["n"]) {
+                    const chunkIx = p["i"] as number
+                    const chunkN = p["n"] as number
+                    photoChunks[chunkIx] = p["t"]
+                    if (chunkIx == chunkN - 1) {
+                        let joined = ""
+                        for (let k = 0; k < chunkN; k++) {
+                            if (photoChunks[k] !== undefined) joined += photoChunks[k]
+                        }
+                        lastPhotoAnswer = joined
+                        lastPhotoError = ""
+                        photoAskId = -1
+                        photoSeq++
+                    }
+                }
             }
             return buildLine("a", id, op, "{\"st\":\"ok\"}")
         }
