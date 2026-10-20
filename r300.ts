@@ -538,8 +538,10 @@ namespace r300 {
 namespace r300_movement {
     // Fixed speeds, as percent of full speed. Deliberately not fields: the block a student
     // picks says WHICH WAY, and how long is the only thing worth tuning in a lesson.
-    const MOVE_SPEED = 80
-    const TURN_SPEED = 80
+    // ⚠️ Full, not 80: below full these motors do not turn the robot at all on the floor, so a
+    // lower number is not a gentler move, it is a stationary robot.
+    const MOVE_SPEED = 100
+    const TURN_SPEED = 100
     // A turn runs this long. Also fixed: "left" and "right" are one obvious amount of turn
     // each, and the motor window's 3000 ms ceiling is a full spin, not a turn.
     const TURN_MS = 1000
@@ -1063,6 +1065,7 @@ namespace r300_music {
 // Loops), which is where it used to sit. With no weight it takes the same default as R300 Music,
 // and being declared last, it follows it.
 //% color="#E67E22" icon="\uf030" block="R300 Camera"
+//% groups="['Photo — Text Answer', 'Object — Yes/No']"
 namespace r300_camera {
     /**
      * Take a photo and send it to R300's vision model with a question. Type the question in the
@@ -1080,6 +1083,7 @@ namespace r300_camera {
      */
     //% blockId=r300_camera_ask block="take a photo and ask %q"
     //% weight=100
+    //% group="Photo — Text Answer"
     //% q.defl="What do you see?"
     export function takePhoto(q: string): void {
         r300.cam(q)
@@ -1098,6 +1102,7 @@ namespace r300_camera {
      */
     //% blockId=r300_camera_wait block="wait for the photo answer up to %seconds seconds"
     //% weight=85
+    //% group="Photo — Text Answer"
     //% seconds.min=1 seconds.max=30 seconds.defl=20
     export function waitPhotoAnswer(seconds: number): string {
         // The counter, not the answer: lastPhotoAnswer still holds the PREVIOUS answer, so
@@ -1155,6 +1160,7 @@ namespace r300_camera {
      */
     //% blockId=r300_camera_start block="R300 starts looking for %target (max 32 bytes)"
     //% weight=95
+    //% group="Object — Yes/No"
     //% target.defl="apple"
     export function startLooking(target: string): void {
         if (refuseTarget(target)) return
@@ -1185,6 +1191,7 @@ namespace r300_camera {
      */
     //% blockId=r300_camera_saw block="R300 saw %target? for up to %seconds seconds"
     //% weight=90
+    //% group="Object — Yes/No"
     //% target.defl="apple"
     //% seconds.min=1 seconds.max=30 seconds.defl=20
     export function saw(target: string, seconds: number): boolean {
