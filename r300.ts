@@ -1065,7 +1065,7 @@ namespace r300_music {
 // Loops), which is where it used to sit. With no weight it takes the same default as R300 Music,
 // and being declared last, it follows it.
 //% color="#E67E22" icon="\uf030" block="R300 Camera"
-//% groups="['Photo — Text Answer', 'Object — Yes/No']"
+//% groups="['take photo and ask open question', 'object detection - return yes/no result']"
 namespace r300_camera {
     /**
      * Take a photo and send it to R300's vision model with a question. Type the question in the
@@ -1083,7 +1083,7 @@ namespace r300_camera {
      */
     //% blockId=r300_camera_ask block="take a photo and ask %q"
     //% weight=100
-    //% group="Photo — Text Answer"
+    //% group="take photo and ask open question"
     //% q.defl="What do you see?"
     export function takePhoto(q: string): void {
         r300.cam(q)
@@ -1102,7 +1102,7 @@ namespace r300_camera {
      */
     //% blockId=r300_camera_wait block="wait for the photo answer up to %seconds seconds"
     //% weight=85
-    //% group="Photo — Text Answer"
+    //% group="take photo and ask open question"
     //% seconds.min=1 seconds.max=30 seconds.defl=20
     export function waitPhotoAnswer(seconds: number): string {
         // The counter, not the answer: lastPhotoAnswer still holds the PREVIOUS answer, so
@@ -1160,7 +1160,7 @@ namespace r300_camera {
      */
     //% blockId=r300_camera_start block="R300 starts looking for %target (max 32 bytes)"
     //% weight=95
-    //% group="Object — Yes/No"
+    //% group="object detection - return yes/no result"
     //% target.defl="apple"
     export function startLooking(target: string): void {
         if (refuseTarget(target)) return
@@ -1191,7 +1191,7 @@ namespace r300_camera {
      */
     //% blockId=r300_camera_saw block="R300 saw %target? for up to %seconds seconds"
     //% weight=90
-    //% group="Object — Yes/No"
+    //% group="object detection - return yes/no result"
     //% target.defl="apple"
     //% seconds.min=1 seconds.max=30 seconds.defl=20
     export function saw(target: string, seconds: number): boolean {
