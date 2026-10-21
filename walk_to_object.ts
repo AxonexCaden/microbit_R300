@@ -31,7 +31,8 @@
 // ⚠️ Every look is a photo and a vision call: a few seconds each (3-6 typical, 20 worst) and they
 // run ONE AT A TIME. The chain stops at the first yes and the in-frame question comes first, so the
 // usual decision — the object is in sight — is ONE look: GAP_MS plus the answer, then a full
-// FORWARD_SECONDS of driving. Only a turn, or an object that has gone, pays for two or three looks.
+// FORWARD_SECONDS of driving. Only a turn, or an object that has gone, pays for two or three looks
+// — and an unanswered look now costs the result block's full 20 s, so a lost object is slow.
 // The robot is stopped while it looks, because the photo is taken whenever R300 gets round to it,
 // not when the block is called. ⚠️ Those rests are what keep the board alive — see GAP_MS before
 // shortening them.
@@ -51,9 +52,8 @@
 // The one line to change: what to walk to. Keep it inside the budget above (7 bytes as written).
 const TARGET = "bottle"
 
-// The three questions, each written ONCE and passed to both blocks of its pair. The waiting block
-// matches on the exact string, so a target spelt differently in "starts looking for" and in "saw"
-// waits out its whole timeout and answers false — never retype one of these by hand.
+// The three questions, each written ONCE and handed to the detection block. The result block waits
+// on whatever object that block named last, so none of these is retyped anywhere.
 const AT_RIGHT = TARGET + " touches right frame edge"    // 31 bytes with "bottle"
 const AT_LEFT = TARGET + " touches left frame edge"      // 30 bytes
 const CENTRED = TARGET + " in the middle"                // 20 bytes
@@ -76,7 +76,6 @@ const DIR_RIGHT = 2
 // needs, so expect overshoot. The knobs are MOVE_SPEED / TURN_SPEED / TURN_MS inside r300_movement;
 // both speeds read 100 because below full these motors do not move the robot at all.
 const FORWARD_SECONDS = 3
-const LOOK_SECONDS = 10     // well under R300's ~20 s worst case, so a miss costs 10 s, not 20
 
 // ⚠️ The rest between looks, and it is load-bearing, not politeness. When the object is in frame
 // each question answers quickly, so the three above go out back to back — and R300 cannot take
@@ -96,7 +95,7 @@ input.onButtonPressed(Button.A, function () {
 })
 
 // Ends the loop — after the look it is in the middle of, because a look holds this stack for up to
-// LOOK_SECONDS. A+B is the one that acts immediately.
+// 20 s. A+B is the one that acts immediately.
 input.onButtonPressed(Button.B, function () {
     walking = false
 })
@@ -173,7 +172,7 @@ function showDirection(dir: number) {
 function sees(question: string): boolean {
     basic.pause(GAP_MS)
     r300_camera.startLooking(question)
-    return r300_camera.saw(question, LOOK_SECONDS)
+    return r300_camera.sawResult()
 }
 
 // Bounded wait for the R300 link: the handshake takes a few seconds after R300 powers up.

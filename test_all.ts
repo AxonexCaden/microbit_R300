@@ -77,11 +77,11 @@
 //   39  start an AI conversation          leaves it OPEN; see the note at the step
 //   40  take a photo and ask              no conversation needed; the answer returns as text
 //                                        and the wait drains it before step 41
-//   41  R300 starts looking for apple     one named object, the same door the photo uses
-//   42  R300 saw apple? for up to 1 s     the timeout path: false unless an answer beats it
-//   43  R300 starts looking for nothing   refused HERE — accepted? must go false
+//   41  object detection for apple        one named object, the same door the photo uses
+//   42  object detection result is true   waits up to 20 s; false with no apple in view
+//   43  object detection for nothing      refused HERE — accepted? must go false
 //   44  an object past 32 bytes           refused HERE too — 32 shows on the LED
-//   45  R300 saw that same 15-byte object  refused before the wait: false at once, not after 30 s
+//   45  the result block, same object     refused before the wait: false at once, not after 20 s
 //   46  stop driving now                  park the robot
 
 // ---------------------------------------------------------------------------
@@ -309,22 +309,22 @@ function sweep(): void {
     check(r300_status.accepted())                            // 40
     if (r300_status.accepted()) r300_camera.waitPhotoAnswer(20)
 
-    // 41 — R300 starts looking for apple. The same vision door 40 used — no conversation needed
+    // 41 — object detection for apple. The same vision door 40 used — no conversation needed
     //      here either. This block only ASKS: the verdict comes back as a request of its own,
     //      seconds later, and the extension latches it when it arrives. Nothing about it shows up
     //      here; the wait is step 42's job.
     r300_camera.startLooking("apple")
     check(r300_status.accepted())                            // 41
 
-    // 42 — R300 saw apple? for up to 1 seconds. The assertion is `false`, and that is the part of
-    //      this block a bench can actually prove: no verdict can arrive inside one second — the
-    //      vision call alone runs a few seconds, as step 40 showed — so the wait has to end by itself
-    //      and say so. Whether this robot can see an apple is NOT something this file can know,
-    //      and the step does not claim to; what it proves is that a wait with no answer returns.
-    //      The matrix stays on 41 for that second: the wait is inside the block, and the step
-    //      number is shown after it, as with 40. WATCH: a verdict landing inside the second would
-    //      fail this step, and would mean the look from 41 was answered faster than 40's photo.
-    const sawApple = r300_camera.saw("apple", 1)
+    // 42 — object detection result is true. It waits on the object step 41 named, and it returns
+    //      after the answer or after a FIXED 20 seconds — there is no timeout field to shorten.
+    //      The assertion is `false`, so run this step with NO APPLE in the camera's view: what it
+    //      then proves is that the wait ends by itself and reports "not seen". Whether this robot
+    //      can see an apple is NOT something this file can know, so do not read a false here as a
+    //      verdict on the hardware. WATCH: with an apple in view the verdict can arrive as true,
+    //      which fails the check — that is the scene requirement, not a fault. The 20 s wait is
+    //      much longer than step 40's photo and is the other thing to notice.
+    const sawApple = r300_camera.sawResult()
     check(!sawApple)                                         // 42
 
     // 43 — an empty target is refused HERE, before anything reaches the wire, and the whole point
@@ -348,13 +348,13 @@ function sweep(): void {
     r300_camera.startLooking("the big red car with the shiny wheels")
     check(!r300_status.accepted())                           // 44
 
-    // 45 — the waiting block carries the same target. It has the same guard on purpose: a student
-    //      types the object into both blocks and either one may be the one that catches it, and a
-    //      wait on a question that was never asked could only burn its whole timeout to arrive at
-    //      the same false. So the assertion is a false returned AT ONCE — thirty seconds are passed
-    //      deliberately, so that a missing guard shows up as a stall to write down rather than as a
-    //      silent pass. WATCH: the 32 on the LED again, immediately, from the same guard.
-    const sawLongTarget = r300_camera.saw("the big red car with the shiny wheels", 30)
+    // 45 — the result block re-checks the target it was handed. Step 44 left the over-length
+    //      object as the remembered one, and startLooking sent nothing for it, so the result
+    //      block refuses AT ONCE rather than waiting 20 seconds for an answer that was never
+    //      coming. The assertion is therefore a false returned immediately, and a missing guard
+    //      shows up as a stall to write down rather than as a silent pass. WATCH: the 32 on the
+    //      LED again, immediately, from the same guard.
+    const sawLongTarget = r300_camera.sawResult()
     check(!sawLongTarget)                                    // 45
 
     // 46 — park it. The stop and the hands land at once; the face change is queued behind step

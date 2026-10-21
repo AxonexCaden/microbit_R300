@@ -58,7 +58,7 @@ Eight groups in the toolbox:
 | **R300 AI** | Talk to the robot's AI: `start` / `end an AI conversation` (what its own boot button does), and describe + record a routine so the robot replays it on a voice command. `moves recorded` and `routine was cut short?` report what the last take captured. Under **Talk Over**, allow or stop talking over the robot's reply — two absolute states, never a toggle |
 | **R300 Status** | `R300 is connected` and `the last command was accepted` — the two values a program can put in a variable or test in an `if` |
 | **R300 Music** | `play song` — one of the robot's three songs, by name. Music only: the robot does not drive itself while a song plays, and it stops hearing you until the song ends |
-| **R300 Camera** | `take a photo and ask` — one photo goes to the robot's vision model with your question, and `wait for the photo answer` returns what the model wrote as text on the LED. `R300 starts looking for` (its label carries the object's **32-byte** limit) and `R300 saw …? for up to … seconds` are the pair that answers yes/no directly. None of them needs an AI conversation — the vision endpoint is baked into the robot at boot |
+| **R300 Camera** | `take a photo and ask` — one photo goes to the robot's vision model with your question, and `wait for the photo answer` returns what the model wrote as text on the LED. `object detection for` (its label carries the object's **32-byte** limit) names the object once, and `object detection result is true` waits up to 20 seconds on that same object — the pair that answers yes/no directly. None of them needs an AI conversation — the vision endpoint is baked into the robot at boot |
 
 Two groups in one program:
 

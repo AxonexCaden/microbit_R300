@@ -1,6 +1,6 @@
 // vision_only.ts — VLM-only bench: the camera blocks with NO AI conversation.
 //
-// What this proves: "take a photo and ask" and "R300 starts looking for" both work on a robot
+// What this proves: "take a photo and ask" and "object detection for" both work on a robot
 // straight from power-up — no conversation, no wake word, no mic — and the robot never leaves
 // idle. Photo → vision model → the answer comes back HERE: text on the LED for A, a tick or a
 // cross for B.
@@ -26,7 +26,7 @@ input.onButtonPressed(Button.A, function () {
 input.onButtonPressed(Button.B, function () {
     if (!awaitLink()) return
     r300_camera.startLooking("bottle")
-    if (r300_camera.saw("bottle", 20)) basic.showIcon(IconNames.Yes)
+    if (r300_camera.sawResult()) basic.showIcon(IconNames.Yes)
     else basic.showIcon(IconNames.No)
 })
 
