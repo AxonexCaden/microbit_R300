@@ -13,7 +13,7 @@
         "r300.ts"
     ],
     "testFiles": [
-        "vision_only.ts"
+        "demo_dance_hands.ts"
     ],
     "public": true,
     "supportedTargets": [
