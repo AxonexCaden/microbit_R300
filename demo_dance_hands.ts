@@ -1,15 +1,19 @@
 // demo_dance_hands.ts — ActiveSummer, with the HANDS doing most of the dancing.
 //
 // A copy of demo_synchronize_dance.ts — same radio sync (press A on any board, every
-// board dances the same routine), same handshake, same re-entry guard — with two
+// board dances the same routine), same handshake, same re-entry guard — with three
 // deliberate changes:
 //
-//   1) The HANDS carry the routine. arm_set addresses the two hands separately, so the
-//      poses below are asymmetric where the music is. The wheels can never be: leg_set
-//      sends one ro/fd pair, which R300 splits between the two motors itself.
-//   2) The legs move FIVE times instead of twenty-three. The old routine bounced
-//      forward/back on literally every event in the beatmap; this one steps on the bar,
-//      and only one of the five steps goes backwards.
+//   1) The HANDS carry the routine, and each one gets its own turn. Every bar is built
+//      from right / left / both motifs instead of one hand waving while the other sits
+//      still. arm_set addresses the hands separately, so -1 leaves one alone. The wheels
+//      can never do this: leg_set sends one ro/fd pair, which R300 splits between the two
+//      motors itself.
+//   2) The legs move SIX times instead of twenty-three, and only one of the six goes
+//      backwards. The old routine bounced forward/back on every single beat.
+//   3) A hand move and a leg move now happen AT THE SAME TIME. They are separate ops on
+//      separate hardware, so nothing forces them to take turns — see leg() below for why
+//      that needs a different call than r300_movement.drive().
 //
 // ─────────────────────────────────────────────────────────────────────────────
 // WHERE THE TIMESTAMPS COME FROM
@@ -62,9 +66,11 @@ input.onButtonPressed(Button.A, function () {
 // only because 600 + 100 happened to land on 700 ≈ one beat, which is luck, not a clock.
 //
 // ⚠️ The hands and the face can be sent while the wheels are still turning — leg_set hands
-// `ms` to the motor board and answers immediately. drive() blocks on purpose so a student's
-// code stays put, so every drive() below is sized to finish before the next timestamp;
-// where the gap is short the comment says so.
+// `ms` to the motor board and answers immediately. That is why nothing below uses
+// r300_movement.drive(): it blocks for the whole move, so a hand command could not be
+// issued until the wheels had already stopped. leg() sends and returns; each leg move
+// still has to be sized to finish before the next timestamp, and where a gap is short the
+// comment says so.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Song time 0 is "R300 accepted song_set". R300 starts its own beat task on that request
@@ -98,54 +104,97 @@ function at(timeMs: number): boolean {
     return !stopped
 }
 
+// Put a leg move on the wire and come straight back. ⚠️ NOT r300_movement.drive(): that
+// one blocks for the whole move, which is right for a student's list of steps and wrong
+// here — it would freeze this routine for 400 ms and make "a hand move while the wheels
+// turn" impossible. r300.motor() returns as soon as R300 acks it (~20 ms) and the motor
+// board runs for `ms` on its own. Clamping copy of drive()'s, with the same 1 ms floor:
+// a move with ms = 0 is answered badarg unless rot and fwd are both 0.
+function leg(rot: number, fwd: number, ms: number): void {
+    r300.motor(r300.clamp(Math.round(rot), -100, 100),
+        r300.clamp(Math.round(fwd), -100, 100),
+        r300.clamp(Math.round(ms), 1, 3000))
+}
+
 // The routine itself: run by the A button (leader) and by the radio handler (followers).
+//
+// Six bars, each built from the right / left / both hand motifs. "same beat" below means
+// the leg command and the hand command are issued at the same timestamp — the wheels are
+// already turning while the hand request goes out on top of them.
+//
+//   Bar 1  0.0 – 2.9 s  greeting        BOTH down -> R -> L -> BOTH up
+//   Bar 2  2.9 – 5.8 s  step + turn     FWD | R-back, BOTH down, TURN-L | L-up, BOTH up
+//   Bar 3  5.8 – 8.9 s  L, R, BOTH      L-back, R-back, BACK | BOTH-back, BOTH up, asym
+//   Bar 4  8.9 – 11.2 s the mirror      BOTH down, FWD | asym, asym mirrored, TURN-R | BOTH
+//   Bar 5 11.9 – 14.0 s wave, bigger    R -> L -> BOTH up -> BOTH back
+//   Bar 6 14.9 – 16.3 s close           FWD | BOTH down, BOTH up + Happy
 function performDance(): void {
     // Song first, clock second. The reading has to follow the ack, because that is the
     // nearest thing "the song is running" this side can observe.
     r300_music.playSong(r300_music.Song.ActiveSummer)
     danceStart = control.millis() + kSongStartOffsetMs
 
-    // ── Bar 1 (0 – 3.5 s) — greeting: the hands come up one at a time ─────────────
+    // ── Bar 1 (0 – 2.9 s) — greeting: right, then left, then both ────────────────
     if (at(128)) {
         r300_emotion.showFace(r300.Emoji.Cool)
-        r300_hands.moveHands(90, 90)               // both down: the starting pose
+        r300_hands.moveHands(90, 90)               // BOTH down: the starting pose
     }
-    if (at(832)) r300_hands.moveHands(0, 90)       // right hand up
-    if (at(1536)) r300_hands.moveHands(90, 0)      // left hand up — the wave
+    if (at(832)) r300_hands.moveHands(0, -1)       // RIGHT only, up
+    if (at(1536)) r300_hands.moveHands(-1, 0)      // LEFT only, up — now both are up
+    if (at(2240)) r300_hands.moveHands(0, 0)       // BOTH up: the resolve
 
-    // ── Bar 2 (2.9 – 5.8 s) — one forward step, then the beatmap's own turn ──────
+    // ── Bar 2 (2.9 – 5.8 s) — step forward WHILE the right hand waves ────────────
     // Speed is full, deliberately: below full these motors do not turn the robot on the
     // floor at all, so a lower number is a stationary robot, not a gentler step.
-    // The step is short (400 ms) so it has finished 380 ms before the hands move again.
-    if (at(2944)) r300_movement.drive(0, 100, 400)         // step 1 of 5
-    if (at(3824)) r300_hands.moveHands(0, 0)               // both up on the resolve
-    if (at(4352)) r300_movement.drive(100, 0, 500)         // TURN_LEFT: half a spin
-    if (at(5056)) r300_hands.moveHands(90, 90)
+    if (at(2944)) {
+        leg(0, 100, 400)                           // wheels start...
+        r300_hands.moveHands(180, -1)              // ...right hand goes back, same beat
+    }
+    if (at(3824)) r300_hands.moveHands(90, 90)     // BOTH down
+    if (at(4352)) {
+        leg(100, 0, 500)                           // TURN_LEFT: half a spin...
+        r300_hands.moveHands(-1, 0)                // ...left hand up through the turn
+    }
+    if (at(5056)) r300_hands.moveHands(0, 0)       // BOTH up
 
-    // ── Bar 3 (5.8 – 8.9 s) — the only backward step, hands straight back ────────
-    if (at(5760)) r300_hands.moveHands(180, 180)           // both back: the widest pose
-    if (at(6464)) r300_hands.moveHands(0, 0)
-    if (at(7168)) r300_movement.drive(0, -100, 400)        // step 2 of 5 — the one backward
-    if (at(8400)) r300_hands.moveHands(0, 180)             // asymmetric: right up, left back
+    // ── Bar 3 (5.8 – 8.9 s) — left, right, both: the motif stated outright ───────
+    if (at(5760)) r300_hands.moveHands(-1, 180)    // LEFT only, back
+    if (at(6464)) r300_hands.moveHands(180, -1)    // RIGHT only, back
+    if (at(7168)) {
+        leg(0, -100, 400)                          // the one backward step...
+        r300_hands.moveHands(180, 180)             // ...BOTH hands back: the widest pose
+    }
+    if (at(7872)) r300_hands.moveHands(0, 0)       // BOTH up
+    if (at(8400)) r300_hands.moveHands(0, 180)     // asymmetric: right up, left back
 
-    // ── Bar 4 (8.9 – 11.2 s) — hands down, one step, turn the other way ──────────
-    if (at(8928)) r300_hands.moveHands(90, 90)
+    // ── Bar 4 (8.9 – 11.2 s) — the mirror image, and the turn comes back ─────────
+    if (at(8928)) r300_hands.moveHands(90, 90)     // BOTH down
+    if (at(9808)) {
+        leg(0, 100, 400)                           // step 4 of 6...
+        r300_hands.moveHands(180, 0)               // ...right back, left up, same beat
+    }
     // 400 ms, not 500: the hand move at 10336 is only 528 ms later.
-    if (at(9808)) r300_movement.drive(0, 100, 400)         // step 3 of 5
-    if (at(10336)) r300_hands.moveHands(180, 0)            // mirror of 8400
-    if (at(11216)) r300_movement.drive(-100, 0, 500)       // TURN_RIGHT: half a spin back
+    if (at(10336)) r300_hands.moveHands(0, 180)    // the pose above, mirrored
+    if (at(11216)) {
+        leg(-100, 0, 500)                          // TURN_RIGHT: half a spin back, 5 of 6...
+        r300_hands.moveHands(90, 90)               // ...hands settling while it turns
+    }
 
     // ── Bar 5 (11.9 – 14.0 s) — the wave again, bigger ──────────────────────────
-    if (at(11920)) r300_hands.moveHands(0, 90)
-    if (at(12624)) r300_hands.moveHands(90, 0)
-    if (at(13504)) r300_hands.moveHands(180, 180)
-    if (at(14032)) r300_hands.moveHands(0, 0)
+    if (at(11920)) r300_hands.moveHands(0, -1)     // RIGHT only
+    if (at(12624)) r300_hands.moveHands(-1, 0)     // LEFT only
+    if (at(13504)) r300_hands.moveHands(0, 0)      // BOTH up
+    if (at(14032)) r300_hands.moveHands(180, 180)  // BOTH back
 
     // ── Bar 6 (14.9 – 16.3 s) — last step, then the closing pose ────────────────
-    if (at(14912)) r300_movement.drive(0, 100, 400)        // step 4 of 5
-    // 5 of 5 was the two half-spins: one left at 4352, one right at 11216.
+    if (at(14912)) {
+        leg(0, 100, 400)                           // step 6 of 6...
+        r300_hands.moveHands(90, 90)               // ...hands down while it runs
+    }
+    // The two half-spins are leg moves 2 and 5, one each way, so the routine ends facing
+    // the way it started.
     if (at(15616)) {
-        r300_hands.moveHands(0, 0)                         // both hands up
+        r300_hands.moveHands(0, 0)                 // BOTH up: the punch
         r300_emotion.showFace(r300.Emoji.Happy)
     }
 }
