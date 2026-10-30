@@ -9,11 +9,11 @@
 //      still. arm_set addresses the hands separately, so -1 leaves one alone. The wheels
 //      can never do this: leg_set sends one ro/fd pair, which R300 splits between the two
 //      motors itself.
-//   2) The legs move FOURTEEN times (they started at six), and harder: the steps are 500 ms
-//      at full speed instead of 400, the two half-spins 600 ms instead of 500, and bar 3's
-//      two steps CURVE. Movement cannot all be forward or the robot walks off the floor, so
-//      four of the fourteen step back, two are spins that travel nowhere, and bar 3's two
-//      curves are equal and opposite — see the bar table below.
+//   2) The legs move TWENTY times (they started at six), and harder: the steps are 500 ms at
+//      full speed instead of 400, the two half-spins 600 ms instead of 500, and four of them
+//      CURVE (ro and fd at once). Forward and backward are paired — bar 1 and bar 5 rock one
+//      way and back, bar 3 curves out and bar 4 curves in — because movement that only ever
+//      goes forward walks the robot off the floor. See the bar table below.
 //   3) A hand move and a leg move now happen AT THE SAME TIME. They are separate ops on
 //      separate hardware, so nothing forces them to take turns — see leg() below for why
 //      that needs a different call than r300_movement.drive().
@@ -38,30 +38,27 @@
 // velocity events, not one timed move per beat) — see demo_bduck_dance.ts.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// One dance at a time — the re-entry guard, shared by the A button (leader) and the radio
+// handler (followers). R300 never replaces a song that is already playing, so a second take
+// would only share the first song's music.
+function dance(): void {
+    if (dancing) return
+    dancing = true
+    performActiveSummerDance()
+    dancing = false
+}
+
 // Everyone else: 0 means "dance too". The value is not checked — 0 is just what this demo
 // sends — and a board that is already dancing ignores the repeat.
 // ⚠️ Not held back by the handshake below: a 0 that lands during R300's ~10 s warm-up
 // starts a routine whose commands come back as failures.
-radio.onReceivedNumber(function (receivedNumber) {
-    if (!(dancing)) {
-        dancing = true
-        stopped = false
-        performActiveSummerDance()
-        dancing = false
-    }
-})
+radio.onReceivedNumber(dance)
 // A — lead. Broadcast 0 first, then dance here: press A on any one board and the rest follow.
 // The send sits OUTSIDE the guard, so pressing A again mid-dance re-broadcasts (a board that
-// missed the first packet can still join) while this board does not restart — R300 never
-// replaces a song that is playing, so a second take would share the first song.
+// missed the first packet can still join) while this board does not restart.
 input.onButtonPressed(Button.A, function () {
     radio.sendNumber(0)
-    if (!(dancing)) {
-        dancing = true
-        stopped = false
-        performActiveSummerDance()
-        dancing = false
-    }
+    dance()
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,17 +100,21 @@ input.onButtonPressed(Button.A, function () {
 // packets ("AudioService: decode queue full") while the routine runs. That is R300's
 // audio pipeline, not this file — nothing sent from here causes it and nothing sent from
 // here can cure it.
-const kSongStartOffsetMs = 100
+// The number is written straight into performActiveSummerDance() below: a const of its own
+// cost flash the program does not have, and it is used exactly once.
 
 let danceStart = 0
 
-// Wait until `timeMs` into the song. Returns false once `stopped` is set, so every caller
-// can be a plain `if (at(...)) action()` and the waits keep running even while the moves
-// are skipped — the routine then ends on time instead of being cut off mid-bar.
-function at(timeMs: number): boolean {
-    const remaining = danceStart + timeMs - control.millis()
-    if (remaining > 0) basic.pause(remaining)
-    return !stopped
+// Wait until `timeMs` into the song, on ONE reading shared by every action below — so a slow
+// send is absorbed by the next wait instead of pushing the rest of the routine back.
+// 🔴 It returns NOTHING, so it must be called as a STATEMENT. `if (at(128)) …` compiles
+// (undefined is falsy) and silently skips everything after it — that bug shipped once and the
+// robot just stood there, face unchanged, for the whole song.
+// ⚠️ No `stopped` check either: nothing here ends a routine early (the A+B stop lives in
+// r300_demo.ts), and that hook plus its flag cost flash the program does not have.
+function at(timeMs: number): void {
+    const wait = danceStart + timeMs - control.millis()
+    if (wait > 0) basic.pause(wait)
 }
 
 // Put a leg move on the wire and come straight back. ⚠️ NOT r300_movement.drive(): that
@@ -135,111 +136,110 @@ function leg(rot: number, fwd: number, ms: number): void {
 // the leg command and the hand command are issued at the same timestamp — the wheels are
 // already turning while the hand request goes out on top of them.
 //
-// The legs move 14 times, each one numbered below. ⚠️ No leg move may run past the next
-// timestamp: where the gap is short the comment says so, and the shortest gap in the table
-// is 528 ms. A step that overruns is not a late step, it is a step that fights the next one.
+// The legs move 20 times. ⚠️ No leg move may run past the next timestamp: where the gap is
+// short the comment says so, and the shortest gap in the table is 528 ms. A step that
+// overruns is not a late step, it is a step that fights the next one.
 //
-//   Bar 1  0.0 – 2.9 s  greeting        BOTH down -> R -> L -> BOTH up + hop
-//   Bar 2  2.9 – 5.8 s  step + spin     FWD | R-back, BOTH down, SPIN-L | L-up, BOTH up + back
+//   Bar 1  0.0 – 2.9 s  greeting        BOTH down, rock BACK, rock FWD, BOTH up + hop
+//   Bar 2  2.9 – 5.8 s  step + spin     FWD | R-back, BOTH down + BACK, SPIN-L | L-up,
+//                                       BOTH up + back
 //   Bar 3  5.8 – 8.9 s  L, R, BOTH      L-back | curve-R, R-back | curve-L, BACK | BOTH-back,
-//                                       BOTH up, asym + hop
-//   Bar 4  8.9 – 11.2 s the mirror      BOTH down, FWD | asym, asym mirrored + back-hop, SPIN-R
-//   Bar 5 11.9 – 14.0 s wave, bigger    R -> L -> BOTH up + FWD, BOTH back + BACK
+//                                       BOTH up + curve-BACK-R, asym + hop
+//   Bar 4  8.9 – 11.2 s the mirror      BOTH down + curve-BACK-L, FWD | asym,
+//                                       asym mirrored + back-hop, SPIN-R | BOTH
+//   Bar 5 11.9 – 14.0 s wave, bigger    R + FWD, L + BACK, BOTH up + FWD, BOTH back + BACK
 //   Bar 6 14.9 – 16.3 s close           FWD | BOTH down, BOTH up + Happy
 function performActiveSummerDance(): void {
     // Song first, clock second. The reading has to follow the ack, because that is the
     // nearest thing "the song is running" this side can observe.
     r300_music.playSong(r300_music.Song.ActiveSummer)
-    danceStart = control.millis() + kSongStartOffsetMs
+    danceStart = control.millis() + 100
 
-    // ── Bar 1 (0 – 2.9 s) — greeting: right, then left, then both ────────────────
-    if (at(128)) {
-        r300_emotion.showFace(r300.Emoji.Cool)
-        r300_hands.moveHands(90, 90)               // BOTH down: the starting pose
-    }
-    if (at(832)) r300_hands.moveHands(0, -1)       // RIGHT only, up
-    if (at(1536)) r300_hands.moveHands(-1, 0)      // LEFT only, up — now both are up
-    if (at(2240)) {
-        r300_hands.moveHands(0, 0)                 // BOTH up: the resolve...
-        leg(0, 70, 250)                            // ...with a small hop under it, 1 of 14
-    }
+    // ── Bar 1 (0 – 2.9 s) — greeting: the hands rise, the wheels rock under them ─
+    at(128)
+    r300_emotion.showFace(r300.Emoji.Cool)
+    r300_hands.moveHands(90, 90)                   // BOTH down: the starting pose
+    at(832)
+    r300_hands.moveHands(0, -1)                    // RIGHT only, up...
+    leg(0, -70, 300)                               // ...rocking BACK
+    at(1536)
+    r300_hands.moveHands(-1, 0)                    // LEFT only, up...
+    leg(0, 70, 550)                                // ...rocking FORWARD, and on through 2240
+    at(2240)
+    r300_hands.moveHands(0, 0)                     // BOTH up: the resolve
 
     // ── Bar 2 (2.9 – 5.8 s) — step forward WHILE the right hand waves ────────────
     // Speed is full, deliberately: below full these motors do not turn the robot on the
     // floor at all, so a lower number is a stationary robot, not a gentler step. So "more
     // force" here means MORE MS — 100 is already the ceiling on the number itself.
-    if (at(2944)) {
-        leg(0, 100, 500)                           // wheels start, 2 of 14...
-        r300_hands.moveHands(180, -1)              // ...right hand goes back, same beat
-    }
-    if (at(3824)) r300_hands.moveHands(90, 90)     // BOTH down
-    if (at(4352)) {
-        leg(100, 0, 600)                           // TURN_LEFT: half a spin, 3 of 14...
-        r300_hands.moveHands(-1, 0)                // ...left hand up through the turn
-    }
-    if (at(5056)) {
-        r300_hands.moveHands(0, 0)                 // BOTH up
-        leg(0, -100, 350)                          // settle back out of the spin, 4 of 14
-    }
+    at(2944)
+    leg(0, 100, 500)                               // wheels start...
+    r300_hands.moveHands(180, -1)                  // ...right hand goes back, same beat
+    at(3824)
+    r300_hands.moveHands(90, 90)                   // BOTH down...
+    leg(0, -60, 300)                               // ...weight back before the spin
+    at(4352)
+    leg(100, 0, 600)                               // TURN_LEFT: half a spin...
+    r300_hands.moveHands(-1, 0)                    // ...left hand up through the turn
+    at(5056)
+    r300_hands.moveHands(0, 0)                     // BOTH up
+    leg(0, -100, 350)                              // settle back out of the spin
 
     // ── Bar 3 (5.8 – 8.9 s) — left, right, both: the motif stated outright ───────
-    if (at(5760)) {
-        r300_hands.moveHands(-1, 180)              // LEFT only, back...
-        leg(85, 85, 350)                           // ...body curves right-forward, 5 of 14
-    }
-    if (at(6464)) {
-        r300_hands.moveHands(180, -1)              // RIGHT only, back...
-        leg(-85, 85, 350)                          // ...body curves left-forward, 6 of 14
-    }
-    if (at(7168)) {
-        leg(0, -100, 500)                          // a backward step, 7 of 14...
-        r300_hands.moveHands(180, 180)             // ...BOTH hands back: the widest pose
-    }
-    if (at(7872)) r300_hands.moveHands(0, 0)       // BOTH up
-    if (at(8400)) {
-        r300_hands.moveHands(0, 180)               // asymmetric: right up, left back...
-        leg(0, 90, 250)                            // ...hop under it, 8 of 14
-    }
+    at(5760)
+    r300_hands.moveHands(-1, 180)                  // LEFT only, back...
+    leg(85, 85, 350)                               // ...body curves right-forward
+    at(6464)
+    r300_hands.moveHands(180, -1)                  // RIGHT only, back...
+    leg(-85, 85, 350)                              // ...body curves left-forward
+    at(7168)
+    leg(0, -100, 500)                              // a backward step...
+    r300_hands.moveHands(180, 180)                 // ...BOTH hands back: the widest pose
+    at(7872)
+    r300_hands.moveHands(0, 0)                     // BOTH up...
+    leg(70, -70, 300)                              // ...curving right AND back
+    at(8400)
+    r300_hands.moveHands(0, 180)                   // asymmetric: right up, left back...
+    leg(0, 90, 250)                                // ...hop under it
 
     // ── Bar 4 (8.9 – 11.2 s) — the mirror image, and the turn comes back ─────────
-    if (at(8928)) r300_hands.moveHands(90, 90)     // BOTH down
-    if (at(9808)) {
-        leg(0, 100, 450)                           // step forward, 9 of 14...
-        r300_hands.moveHands(180, 0)               // ...right back, left up, same beat
-    }
+    at(8928)
+    r300_hands.moveHands(90, 90)                   // BOTH down...
+    leg(-70, -70, 300)                             // ...curving left AND back
+    at(9808)
+    leg(0, 100, 450)                               // step forward...
+    r300_hands.moveHands(180, 0)                   // ...right back, left up, same beat
     // 450 ms, not 500: the hand move at 10336 is only 528 ms later.
-    if (at(10336)) {
-        r300_hands.moveHands(0, 180)               // the pose above, mirrored...
-        leg(0, -70, 250)                           // ...with a small step back, 10 of 14
-    }
-    if (at(11216)) {
-        leg(-100, 0, 600)                          // TURN_RIGHT: half a spin back, 11 of 14...
-        r300_hands.moveHands(90, 90)               // ...hands settling while it turns
-    }
+    at(10336)
+    r300_hands.moveHands(0, 180)                   // the pose above, mirrored...
+    leg(0, -70, 250)                               // ...with a small step back
+    at(11216)
+    leg(-100, 0, 600)                              // TURN_RIGHT: half a spin back...
+    r300_hands.moveHands(90, 90)                   // ...hands settling while it turns
 
-    // ── Bar 5 (11.9 – 14.0 s) — the wave again, bigger ──────────────────────────
-    if (at(11920)) r300_hands.moveHands(0, -1)     // RIGHT only
-    if (at(12624)) r300_hands.moveHands(-1, 0)     // LEFT only
-    if (at(13504)) {
-        r300_hands.moveHands(0, 0)                 // BOTH up...
-        leg(0, 100, 450)                           // ...and a step out toward the room, 12 of 14
-    }
-    if (at(14032)) {
-        r300_hands.moveHands(180, 180)             // BOTH back...
-        leg(0, -100, 400)                          // ...weight coming back, 13 of 14
-    }
+    // ── Bar 5 (11.9 – 14.0 s) — the wave again, bigger, and the wheels rock too ──
+    at(11920)
+    r300_hands.moveHands(0, -1)                    // RIGHT only...
+    leg(0, 90, 300)                                // ...a step FORWARD under it
+    at(12624)
+    r300_hands.moveHands(-1, 0)                    // LEFT only...
+    leg(0, -90, 300)                               // ...and straight BACK
+    at(13504)
+    r300_hands.moveHands(0, 0)                     // BOTH up...
+    leg(0, 100, 450)                               // ...and a step out toward the room
+    at(14032)
+    r300_hands.moveHands(180, 180)                 // BOTH back...
+    leg(0, -100, 400)                              // ...weight coming back
 
     // ── Bar 6 (14.9 – 16.3 s) — last step, then the closing pose ────────────────
-    if (at(14912)) {
-        leg(0, 100, 450)                           // the last step, 14 of 14...
-        r300_hands.moveHands(90, 90)               // ...hands down while it runs
-    }
-    // The two half-spins are leg moves 3 and 11, one each way, and bar 3's two curves are
-    // equal and opposite, so the routine ends facing the way it started.
-    if (at(15616)) {
-        r300_hands.moveHands(0, 0)                 // BOTH up: the punch
-        r300_emotion.showFace(r300.Emoji.Happy)
-    }
+    at(14912)
+    leg(0, 100, 450)                               // the last step...
+    r300_hands.moveHands(90, 90)                   // ...hands down while it runs
+    // The two half-spins go one each way, and the curves in bar 3 pair with the ones in
+    // bar 4, so the routine ends where it started, facing the way it started.
+    at(15616)
+    r300_hands.moveHands(0, 0)                     // BOTH up: the punch
+    r300_emotion.showFace(r300.Emoji.Happy)
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -248,10 +248,9 @@ function performActiveSummerDance(): void {
 // `testFiles` picks which of the two gets compiled.
 // ═════════════════════════════════════════════════════════════════════════════
 
-// dancing — the re-entry guard both handlers above read.
-// stopped — read all through the routine but never set true in this demo: the A+B stop that
-// sets it lives in r300_demo.ts.
-let stopped = false
+// dancing — the re-entry guard both handlers above read. There is no stop flag any more: the
+// A+B stop that would set one lives in r300_demo.ts, and the flag cost flash nothing in this
+// demo ever used.
 let dancing = false
 // Wait for the handshake before the button does anything (the radio handler above does NOT
 // wait — see its note): R300 ignores the link for about ten seconds after power-up, and a
