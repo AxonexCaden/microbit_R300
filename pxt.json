@@ -13,7 +13,7 @@
         "r300.ts"
     ],
     "testFiles": [
-        "demo_dance_hands.ts"
+        "demo_bduck_dance.ts"
     ],
     "public": true,
     "supportedTargets": [
