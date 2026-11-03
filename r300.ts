@@ -261,7 +261,8 @@ namespace r300 {
      * one place instead of three.
      *
      * These 19 are the names present in ALL THREE monitor profiles (floki / pengu / bduck),
-     * so a robot built as a different character still knows every one. The other 8 names in
+     * so a robot built as a different character still knows every one — plus the two custom
+     * slots (custom1 / custom2), which are whatever art that profile was given. The other 8 names in
      * the GIF table are system states (connecting / disconnected / listening / neutral /
      * standby / startup / thinking / sleepy) and are left out on purpose: picking
      * "disconnected" would not disconnect anything, `neutral` gets remapped to `standby`
@@ -307,6 +308,14 @@ namespace r300 {
         Relaxed,
         //% block="delicious"
         Delicious,
+        // The two custom slots. Their names are literal: the monitors carry them as
+        // "custom1" / "custom2", so there is nothing to translate — the wire string is the
+        // enum name, lowercased. A profile that has no art for them still ACCEPTS the
+        // request (R300 only checks the format), it just has nothing to draw.
+        //% block="custom1"
+        Custom1,
+        //% block="custom2"
+        Custom2,
     }
 
     function emojiName(e: Emoji): string {
@@ -332,6 +341,8 @@ namespace r300 {
             case Emoji.Suspicious: return "suspicious"
             case Emoji.Relaxed: return "relaxed"
             case Emoji.Delicious: return "delicious"
+            case Emoji.Custom1: return "custom1"
+            case Emoji.Custom2: return "custom2"
         }
         return "happy"
     }
