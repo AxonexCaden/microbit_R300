@@ -1,8 +1,10 @@
-// demo_ActiveSummer_dance.ts — ActiveSummer, with the HANDS doing most of the dancing.
+// demo_dance_video.ts — ActiveSummer, with the HANDS doing most of the dancing.
 //
 // Press A on any one board and every board dances: the press broadcasts first, the other
-// boards pick it up and run the same routine, so the whole room stays together. Same
-// handshake, same re-entry guard as demo_synchronize_dance.ts, with these deliberate changes:
+// boards pick it up and run the same routine, so the whole room stays together. B does the
+// same with a DIFFERENT dance — the robot's own bduck choreography, which R300 plays from its
+// firmware (silent, wheels only). Same handshake, same re-entry guard as
+// demo_synchronize_dance.ts, with these deliberate changes:
 //
 //   1) The HANDS carry the routine, and each one gets its own turn. Every bar is built
 //      from right / left / both motifs instead of one hand waving while the other sits
@@ -15,11 +17,13 @@
 //      way and back, bar 3 curves out and bar 4 curves in — because movement that only ever
 //      goes forward walks the robot off the floor. See the bar table below.
 //   3) A hand move and a leg move now happen AT THE SAME TIME. They are separate ops on
-//      separate hardware, so nothing forces them to take turns — see leg() below for why
-//      that needs a different call than r300_movement.drive().
-//   4) ⚠️ ONE DANCE PER BUILD. The bduck dance is demo_bduck_dance.ts, a separate file: the two
-//      together do not fit (this program has only a few dozen bytes of flash to spare). pxt.json
-//      `testFiles` picks which one is compiled.
+//      separate hardware, so nothing forces them to take turns — see the note above the
+//      routine for why that needs r300.motor() and not r300_movement.drive().
+//   4) TWO BUTTONS, TWO DANCES. A runs this file's ActiveSummer routine; B hands the bduck
+//      choreography to R300 itself (`bduck_dance_set`) and puts the custom1 face on the
+//      monitor while it runs, so its 88 beats never enter this program — a local copy would
+//      not fit in the few dozen bytes of flash left over. There is nothing left here that
+//      drives bduck move by move: the beatmap is R300's, and that op is how it runs it.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 // WHERE THE TIMESTAMPS COME FROM
@@ -35,30 +39,57 @@
 // clock. If the beatmap is ever re-cut, these numbers have to be re-copied with it.
 //
 // ⚠️ That is ActiveSummer's table ONLY. bduck has its own and a different shape (129 BPM,
-// velocity events, not one timed move per beat) — see demo_bduck_dance.ts.
+// velocity events, not one timed move per beat), and it never enters this program — R300
+// plays it whole when bduck_dance_set arrives.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// One dance at a time — the re-entry guard, shared by the A button (leader) and the radio
-// handler (followers). R300 never replaces a song that is already playing, so a second take
-// would only share the first song's music.
-function dance(): void {
+// One dance at a time — the re-entry guard, shared by both buttons (leaders) and the radio
+// handler (followers). R300 never replaces a song or a dance that is already running, so a
+// second take would only share the first one's music, or be refused outright.
+// ⚠️ The guard lives INSIDE performActiveSummerDance(), not in a dance() wrapper around it: the
+// wrapper only tested the flag either side of one call, and this file is over the flash budget
+// by a few bytes — the same merge that took leg() out. danceBduck() still carries its own copy.
+// B — bduck, danced by R300 itself: 88 beats, no music, under the custom1 face.
+// ⚠️ No local routine here on purpose — the beatmap would not fit in the flash this program has
+// left, and R300 already holds it. There is no block for this op, so it goes out through the raw
+// send(); the payload is exactly what the firmware's bduck_dance_set expects (R300_README.md 3.6).
+// ⚠️ R300 refuses it while anything else owns the chassis, and nothing reports the end, so the
+// 32 s below is this side's own estimate (the dance's last beat is at 30.998 s). It only holds
+// the guard so A cannot start on top of it — it does not stop the robot.
+// ⚠️ The face goes FIRST, and it is the one block call here rather than a raw send: "custom1" is
+// now a member of r300.Emoji, so the wire string comes from emojiName like every other face —
+// no second copy of the name, and nothing to keep in sync if the art is ever renamed.
+function danceBduck(): void {
     if (dancing) return
     dancing = true
-    performActiveSummerDance()
+    r300_emotion.showFace(r300.Emoji.Custom1)
+    r300.send("bduck_dance_set", "{\"on\":1}")
+    basic.pause(32000)
     dancing = false
 }
 
-// Everyone else: 0 means "dance too". The value is not checked — 0 is just what this demo
-// sends — and a board that is already dancing ignores the repeat.
+// Everyone else: 0 = ActiveSummer, 1 = bduck — the same two numbers the buttons broadcast.
+// A board that is already dancing ignores the repeat.
 // ⚠️ Not held back by the handshake below: a 0 that lands during R300's ~10 s warm-up
 // starts a routine whose commands come back as failures.
-radio.onReceivedNumber(dance)
-// A — lead. Broadcast 0 first, then dance here: press A on any one board and the rest follow.
+radio.onReceivedNumber(function (v: number) {
+    if (v == 1) {
+        danceBduck()
+    } else {
+        performActiveSummerDance()
+    }
+})
+// A — lead. Broadcast first, then dance here: press A on any one board and the rest follow.
 // The send sits OUTSIDE the guard, so pressing A again mid-dance re-broadcasts (a board that
 // missed the first packet can still join) while this board does not restart.
 input.onButtonPressed(Button.A, function () {
     radio.sendNumber(0)
-    dance()
+    performActiveSummerDance()
+})
+// B — the same shape, for bduck: custom1 face, then the dance.
+input.onButtonPressed(Button.B, function () {
+    radio.sendNumber(1)
+    danceBduck()
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -74,7 +105,7 @@ input.onButtonPressed(Button.A, function () {
 // ⚠️ The hands and the face can be sent while the wheels are still turning — leg_set hands
 // `ms` to the motor board and answers immediately. That is why nothing below uses
 // r300_movement.drive(): it blocks for the whole move, so a hand command could not be
-// issued until the wheels had already stopped. leg() sends and returns; each leg move
+// issued until the wheels had already stopped. r300.motor() sends and returns; each leg move
 // still has to be sized to finish before the next timestamp, and where a gap is short the
 // comment says so.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -122,13 +153,13 @@ function at(timeMs: number): void {
 // here — it would freeze this routine for 400 ms and make "a hand move while the wheels
 // turn" impossible. r300.motor() returns as soon as R300 acks it (~20 ms) and the motor
 // board runs for `ms` on its own.
-// ⚠️ No clamp here, unlike drive(): every call below passes literal values already inside
+// ⚠️ CALLED DIRECTLY, with no leg() wrapper. The wrapper only forwarded its three arguments,
+// and this file is over the flash budget by a few dozen bytes — so the one function it cost is
+// gone and every call below says r300.motor(). Same behaviour, one less frame.
+// ⚠️ No clamp either, unlike drive(): every call below passes literal values already inside
 // -100..100 and 1..3000, and three clamp calls cost flash the program does not have (the
 // whole demo has only a few dozen bytes to spare). Anything computed must be clamped by the
 // caller.
-function leg(rot: number, fwd: number, ms: number): void {
-    r300.motor(rot, fwd, ms)
-}
 
 // The ActiveSummer routine: run by the A button (leader) and by the radio handler (followers).
 //
@@ -150,6 +181,9 @@ function leg(rot: number, fwd: number, ms: number): void {
 //   Bar 5 11.9 – 14.0 s wave, bigger    R + FWD, L + BACK, BOTH up + FWD, BOTH back + BACK
 //   Bar 6 14.9 – 16.3 s close           FWD | BOTH down, BOTH up + Happy
 function performActiveSummerDance(): void {
+    if (dancing) return
+    dancing = true
+
     // Song first, clock second. The reading has to follow the ack, because that is the
     // nearest thing "the song is running" this side can observe.
     r300_music.playSong(r300_music.Song.ActiveSummer)
@@ -161,10 +195,10 @@ function performActiveSummerDance(): void {
     r300_hands.moveHands(90, 90)                   // BOTH down: the starting pose
     at(832)
     r300_hands.moveHands(0, -1)                    // RIGHT only, up...
-    leg(0, -70, 300)                               // ...rocking BACK
+    r300.motor(0, -70, 300)                        // ...rocking BACK
     at(1536)
     r300_hands.moveHands(-1, 0)                    // LEFT only, up...
-    leg(0, 70, 550)                                // ...rocking FORWARD, and on through 2240
+    r300.motor(0, 70, 550)                         // ...rocking FORWARD, and on through 2240
     at(2240)
     r300_hands.moveHands(0, 0)                     // BOTH up: the resolve
 
@@ -173,79 +207,80 @@ function performActiveSummerDance(): void {
     // floor at all, so a lower number is a stationary robot, not a gentler step. So "more
     // force" here means MORE MS — 100 is already the ceiling on the number itself.
     at(2944)
-    leg(0, 100, 500)                               // wheels start...
+    r300.motor(0, 100, 500)                        // wheels start...
     r300_hands.moveHands(180, -1)                  // ...right hand goes back, same beat
     at(3824)
     r300_hands.moveHands(90, 90)                   // BOTH down...
-    leg(0, -60, 300)                               // ...weight back before the spin
+    r300.motor(0, -60, 300)                        // ...weight back before the spin
     at(4352)
-    leg(100, 0, 600)                               // TURN_LEFT: half a spin...
+    r300.motor(100, 0, 600)                        // TURN_LEFT: half a spin...
     r300_hands.moveHands(-1, 0)                    // ...left hand up through the turn
     at(5056)
     r300_hands.moveHands(0, 0)                     // BOTH up
-    leg(0, -100, 350)                              // settle back out of the spin
+    r300.motor(0, -100, 350)                       // settle back out of the spin
 
     // ── Bar 3 (5.8 – 8.9 s) — left, right, both: the motif stated outright ───────
     at(5760)
     r300_hands.moveHands(-1, 180)                  // LEFT only, back...
-    leg(85, 85, 350)                               // ...body curves right-forward
+    r300.motor(85, 85, 350)                        // ...body curves right-forward
     at(6464)
     r300_hands.moveHands(180, -1)                  // RIGHT only, back...
-    leg(-85, 85, 350)                              // ...body curves left-forward
+    r300.motor(-85, 85, 350)                       // ...body curves left-forward
     at(7168)
-    leg(0, -100, 500)                              // a backward step...
+    r300.motor(0, -100, 500)                       // a backward step...
     r300_hands.moveHands(180, 180)                 // ...BOTH hands back: the widest pose
     at(7872)
     r300_hands.moveHands(0, 0)                     // BOTH up...
-    leg(70, -70, 300)                              // ...curving right AND back
+    r300.motor(70, -70, 300)                       // ...curving right AND back
     at(8400)
     r300_hands.moveHands(0, 180)                   // asymmetric: right up, left back...
-    leg(0, 90, 250)                                // ...hop under it
+    r300.motor(0, 90, 250)                         // ...hop under it
 
     // ── Bar 4 (8.9 – 11.2 s) — the mirror image, and the turn comes back ─────────
     at(8928)
     r300_hands.moveHands(90, 90)                   // BOTH down...
-    leg(-70, -70, 300)                             // ...curving left AND back
+    r300.motor(-70, -70, 300)                      // ...curving left AND back
     at(9808)
-    leg(0, 100, 450)                               // step forward...
+    r300.motor(0, 100, 450)                        // step forward...
     r300_hands.moveHands(180, 0)                   // ...right back, left up, same beat
     // 450 ms, not 500: the hand move at 10336 is only 528 ms later.
     at(10336)
     r300_hands.moveHands(0, 180)                   // the pose above, mirrored...
-    leg(0, -70, 250)                               // ...with a small step back
+    r300.motor(0, -70, 250)                        // ...with a small step back
     at(11216)
-    leg(-100, 0, 600)                              // TURN_RIGHT: half a spin back...
+    r300.motor(-100, 0, 600)                       // TURN_RIGHT: half a spin back...
     r300_hands.moveHands(90, 90)                   // ...hands settling while it turns
 
     // ── Bar 5 (11.9 – 14.0 s) — the wave again, bigger, and the wheels rock too ──
     at(11920)
     r300_hands.moveHands(0, -1)                    // RIGHT only...
-    leg(0, 90, 300)                                // ...a step FORWARD under it
+    r300.motor(0, 90, 300)                         // ...a step FORWARD under it
     at(12624)
     r300_hands.moveHands(-1, 0)                    // LEFT only...
-    leg(0, -90, 300)                               // ...and straight BACK
+    r300.motor(0, -90, 300)                        // ...and straight BACK
     at(13504)
     r300_hands.moveHands(0, 0)                     // BOTH up...
-    leg(0, 100, 450)                               // ...and a step out toward the room
+    r300.motor(0, 100, 450)                        // ...and a step out toward the room
     at(14032)
     r300_hands.moveHands(180, 180)                 // BOTH back...
-    leg(0, -100, 400)                              // ...weight coming back
+    r300.motor(0, -100, 400)                       // ...weight coming back
 
     // ── Bar 6 (14.9 – 16.3 s) — last step, then the closing pose ────────────────
     at(14912)
-    leg(0, 100, 450)                               // the last step...
+    r300.motor(0, 100, 450)                        // the last step...
     r300_hands.moveHands(90, 90)                   // ...hands down while it runs
     // The two half-spins go one each way, and the curves in bar 3 pair with the ones in
     // bar 4, so the routine ends where it started, facing the way it started.
     at(15616)
     r300_hands.moveHands(0, 0)                     // BOTH up: the punch
     r300_emotion.showFace(r300.Emoji.Happy)
+    dancing = false
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// The bduck dance is demo_bduck_dance.ts — a separate file, on purpose. Two dances do not fit
-// in one micro:bit program (this one alone has only a few dozen bytes to spare), so pxt.json
-// `testFiles` picks which of the two gets compiled.
+// The bduck dance is NOT in this file — R300 runs it. Nothing here drives bduck move by move:
+// the 88 beats stay in R300's firmware and `bduck_dance_set` is the only handle this program
+// has on them (this file alone has only a few dozen bytes of flash to spare).
 // ═════════════════════════════════════════════════════════════════════════════
 
 // dancing — the re-entry guard both handlers above read. There is no stop flag any more: the
