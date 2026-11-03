@@ -1,4 +1,4 @@
-// demo_ActiveSummer_dance.ts — ActiveSummer, with the HANDS doing most of the dancing.
+// demo_dance_video.ts — ActiveSummer, with the HANDS doing most of the dancing.
 //
 // Press A on any one board and every board dances: the press broadcasts first, the other
 // boards pick it up and run the same routine, so the whole room stays together. B does the
@@ -22,8 +22,8 @@
 //   4) TWO BUTTONS, TWO DANCES. A runs this file's ActiveSummer routine; B hands the bduck
 //      choreography to R300 itself (`bduck_dance_set`) and puts the custom1 face on the
 //      monitor while it runs, so its 88 beats never enter this program — a local copy would
-//      not fit in the few dozen bytes of flash left over. demo_bduck_dance.ts stays the
-//      version where the bit drives bduck move by move.
+//      not fit in the few dozen bytes of flash left over. There is nothing left here that
+//      drives bduck move by move: the beatmap is R300's, and that op is how it runs it.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 // WHERE THE TIMESTAMPS COME FROM
@@ -39,7 +39,8 @@
 // clock. If the beatmap is ever re-cut, these numbers have to be re-copied with it.
 //
 // ⚠️ That is ActiveSummer's table ONLY. bduck has its own and a different shape (129 BPM,
-// velocity events, not one timed move per beat) — see demo_bduck_dance.ts.
+// velocity events, not one timed move per beat), and it never enters this program — R300
+// plays it whole when bduck_dance_set arrives.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // One dance at a time — the re-entry guard, shared by both buttons (leaders) and the radio
@@ -277,9 +278,9 @@ function performActiveSummerDance(): void {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// The bduck dance is NOT in this file — R300 runs it. demo_bduck_dance.ts stays the version
-// where the bit drives every move itself (hands + wheels); the two cannot share a program
-// (this one alone has only a few dozen bytes of flash to spare).
+// The bduck dance is NOT in this file — R300 runs it. Nothing here drives bduck move by move:
+// the 88 beats stay in R300's firmware and `bduck_dance_set` is the only handle this program
+// has on them (this file alone has only a few dozen bytes of flash to spare).
 // ═════════════════════════════════════════════════════════════════════════════
 
 // dancing — the re-entry guard both handlers above read. There is no stop flag any more: the
