@@ -9,6 +9,8 @@
 node_modules/
 pxt_modules/
 built/
+# nothing writes here today; kept so a stray ESP-IDF/tsc build cannot be committed
+build/
 
 # release script output (scripts/custom_release.py)
 releases/
