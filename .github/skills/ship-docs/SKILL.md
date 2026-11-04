@@ -155,9 +155,14 @@ two agents edit the issue index.
    "ship it"), in the same git-lock command. If the push is rejected, `git pull --rebase`
    and push again. Never `--force`, never rebase a shared branch, never push to `upstream`.
 
-   ⚠️ **If a branch name also exists as a directory, the bare name is ambiguous.** EmotionDisplay
-   has a `main/` folder, so `git log main` / `git branch -f main …` can be read as a path. Use the
-   full ref there: `git update-ref refs/heads/main <sha>`, `git push origin HEAD:refs/heads/main`.
+   ⚠️ **If a branch name also exists as a directory, the bare name is ambiguous.** CompanionRobots
+   and EmotionDisplay both have a `main/` folder, so `git log main`, `git diff … main` and
+   `git rev-list --count main` die with `fatal: ambiguous argument 'main': both revision and
+   filename`. `git merge-base main HEAD`, `git switch main`, `git merge main`, `git push` and range
+   forms like `main..dev` are fine. Never `git branch -f main …` — in EmotionDisplay that created a
+   real branch named `refs/heads/main`. Use `git update-ref refs/heads/main <sha>` and
+   `git push origin HEAD:refs/heads/main`. MicroBit has no `main/` folder today, so the rule does not
+   bite there — but it stays identical in all three copies.
 
 ## Merge conflicts
 
