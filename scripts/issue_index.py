@@ -23,15 +23,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-def _default_file() -> Path:
-    for name in ("ISSUES_AND_PROGRESS.md", "IssuesAndProgress.md"):
-        candidate = ROOT / name
-        if candidate.exists():
-            return candidate
-    return ROOT / "ISSUES_AND_PROGRESS.md"
-
-
-DEFAULT_FILE = _default_file()
+DEFAULT_FILE = ROOT / "ISSUES_AND_PROGRESS.md"
 
 LIGHT_ORDER = ["light/red", "light/yellow", "light/green", "light/white", "light/done"]
 

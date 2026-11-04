@@ -18,13 +18,12 @@ If there are no uncommitted changes at all, say so and stop.
 
 | Repo | Root docs | Component docs | Issue index | Build entry |
 |---|---|---|---|---|
-| **CompanionRobots** | `SoftwareArchitectural.md` (structure), `IssuesAndProgress.md` (work log + indices), `CLAUDE.md` (gitignored rules) | `main/boards/R300/` `R300_README.md` + `R300_PROGRESS.md`; `main/boards/R100v3/` likewise; `main/characters/characters_README.md` + `_PROGRESS.md` | hand-indexed §2/§3 of `IssuesAndProgress.md` (no markers yet) | `python3 scripts/custom_release.py <board> --name …` |
+| **CompanionRobots** | `ARCHITECTURE.md` (structure), `ISSUES_AND_PROGRESS.md` (work log + indices), `CLAUDE.md` (gitignored rules) | `main/boards/R300/` `R300_README.md` + `R300_PROGRESS.md`; `main/boards/R100v3/` likewise; `main/characters/characters_README.md` + `_PROGRESS.md` | hand-indexed §2/§3 of `ISSUES_AND_PROGRESS.md` (no markers yet) | `python3 scripts/custom_release.py <board> --name …` |
 | **MicroBit** | `README.md` (product + quick start), `ARCHITECTURE.md` (protocol), `ISSUES_AND_PROGRESS.md` (indices) | `PROTOCOL_PROGRESS.md` (build/link gotchas) | marker blocks in `ISSUES_AND_PROGRESS.md` | `python3 scripts/custom_release.py` |
 | **EmotionDisplay** | `README.md`, `ARCHITECTURE.md`, `ISSUES_AND_PROGRESS.md` | `main/FIRMWARE_README.md` + `main/FIRMWARE_PROGRESS.md`; `tools/GIF_README.md`; `tools/electron/ELECTRON_README.md` | marker blocks in `ISSUES_AND_PROGRESS.md` | `python3 scripts/custom_release.py --build <pengu\|floki\|bduck>` |
 
-`ARCHITECTURE.md` / `ISSUES_AND_PROGRESS.md` exist in CompanionRobots as **aliases** that point
-at the historical `SoftwareArchitectural.md` / `IssuesAndProgress.md`. Edit the historical file,
-never the alias.
+All three repos use the same names. Never introduce an alias or a second copy of a document:
+one document, one path.
 
 ## Where each kind of knowledge goes
 
@@ -32,8 +31,8 @@ never the alias.
 |---|---|
 | a stable fact, pin, key, option, procedure | the component `<X>_README.md` (or `ARCHITECTURE.md` if it spans components) |
 | a rule learned from a failure | the component `<X>_PROGRESS.md`: **rule first, then evidence** |
-| a rule that holds across boards/components | `IssuesAndProgress.md` §5 (CR) / `ISSUES_AND_PROGRESS.md` §5 (MB, ED) |
-| structure: layers, protocol shape, build flow, folder layout | `ARCHITECTURE.md` (CR: `SoftwareArchitectural.md`) — only when structure actually changed |
+| a rule that holds across boards/components | `ISSUES_AND_PROGRESS.md` §5 (CR) / `ISSUES_AND_PROGRESS.md` §5 (MB, ED) |
+| structure: layers, protocol shape, build flow, folder layout | `ARCHITECTURE.md` (CR: `ARCHITECTURE.md`) — only when structure actually changed |
 | a phase of work | a GitHub issue `[Phase N]` + one row in the phase index |
 | a new problem or decision | a GitHub issue (`light/*` + `area/*`, `decision` where relevant) + one row in the issue index |
 
@@ -56,7 +55,7 @@ an explanation is expected: "see Phase 277" alone teaches the reader nothing.
 4. **Record the work** (only if the session produced a phase, an issue, or a decision):
    - CR: `gh issue create -R AxonexCaden/CompanionRobots` — title `[Phase N] <topic>`, labels
      `phase` (or `light/*` + `area/*` for a problem, plus `decision` for a design decision).
-     Then add one row to §2 (phase) or §3 (issue) of `IssuesAndProgress.md` under the matching
+     Then add one row to §2 (phase) or §3 (issue) of `ISSUES_AND_PROGRESS.md` under the matching
      bucket. Rows are append-only: never move a row between buckets, never chase its status.
    - MB / ED: same `gh issue create -R <repo>`, then run
      `python3 scripts/issue_index.py --write`. Never hand-edit the marker block.
@@ -151,7 +150,7 @@ headings. Run this from the CompanionRobots root after the TOC pass:
 python3 - <<'PY'
 import re
 from pathlib import Path
-p = Path("IssuesAndProgress.md")
+p = Path("ISSUES_AND_PROGRESS.md")
 lines = p.read_text(encoding="utf-8").split("\n")
 changed = 0
 rows = 0
@@ -170,6 +169,6 @@ for i in range(len(lines) - 1, -1, -1):
     if line.startswith("| ") and not line.startswith(("| 時間", "|---")):
         rows += 1
 p.write_text("\n".join(lines), encoding="utf-8")
-print(f"IssuesAndProgress.md: fixed {changed} bucket count(s)")
+print(f"ISSUES_AND_PROGRESS.md: fixed {changed} bucket count(s)")
 PY
 ```

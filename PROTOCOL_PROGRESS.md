@@ -49,17 +49,13 @@ linked into the hex.
 
 ## 4. Triage checklist
 
-Nothing happens on the robot:
+Nothing happens on the robot — check in this order:
 
-1. Has it finished starting up? The link is ignored for the first 10–15 seconds.
-2. Is your program running? Put `basic.showIcon(IconNames.Yes)` at the top — a
-   tick on reset means it is.
-3. Did you reflash? `pxt build` must have rewritten `built/binary.hex` after
-   your last edit; check the timestamp.
-4. Is the robot online? On the Wi-Fi edition the link stays off until the robot
-   has been set up on a network once.
-5. Holding **A** while resetting keeps the micro:bit on USB serial on purpose
-   (a developer escape hatch) — the link stays off.
+1. Is the program even running? `basic.showIcon(IconNames.Yes)` at the top: a tick
+   on reset means it is.
+2. Did you reflash? `built/binary.hex` must be newer than your last edit (§2).
+3. Is the robot online? On the Wi-Fi edition the link stays off until the robot has
+   been set up on a network once.
 
-Writing your own sender: raise both serial buffers to 254 bytes, cross the
-wires (`P0` → robot RX, `P1` ← robot TX) and share ground.
+Everything else is already a rule above: start-up silence (§3), ground (§3), the
+A-on-reset escape hatch (§3), buffers (§3).
