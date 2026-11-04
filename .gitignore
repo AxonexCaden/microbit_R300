@@ -9,6 +9,9 @@
 node_modules/
 pxt_modules/
 built/
+
+# release script output (scripts/custom_release.py)
+releases/
 .pxt/
 yotta_modules/
 yotta_targets/
