@@ -92,12 +92,17 @@ radio.onReceivedNumber(function (v: number) {
 // A — lead. Broadcast first, then dance here: press A on any one board and the rest follow.
 // The send sits OUTSIDE the guard, so pressing A again mid-dance re-broadcasts (a board that
 // missed the first packet can still join) while this board does not restart.
+// ⚠️ The 5 s pause sits BEFORE the broadcast, not after it: the followers start the moment the
+// packet lands, so a leader that waited after sending would be 5 s behind its own followers.
+// Waiting first keeps every board starting together.
 input.onButtonPressed(Button.A, function () {
+    basic.pause(5000)
     radio.sendNumber(0)
     performActiveSummerDance()
 })
 // B — the same shape, for bduck: custom1 face, then the dance.
 input.onButtonPressed(Button.B, function () {
+    basic.pause(5000)
     radio.sendNumber(1)
     danceBduck()
 })
