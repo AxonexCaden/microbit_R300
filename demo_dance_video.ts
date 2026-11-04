@@ -64,7 +64,17 @@ function danceBduck(): void {
     dancing = true
     r300.emoji(r300.Emoji.Custom1)
     r300.send("bduck_dance_set", "{\"on\":1}")
-    basic.pause(32000)
+    // The arms join the dance: up, two alternating swings, then back down. The wheels run
+    // from R300's beatmap for the whole 32 s, so these pauses only time the HANDS — their sum
+    // must stay at 32000 or the re-entry guard releases early.
+    r300_hands.bothHands(r300_hands.HandPose.Up)
+    basic.pause(3000)
+    r300_hands.moveHands(20, 160)
+    basic.pause(3000)
+    r300_hands.moveHands(160, 20)
+    basic.pause(3000)
+    r300_hands.bothHands(r300_hands.HandPose.Down)
+    basic.pause(23000)
     dancing = false
 }
 
