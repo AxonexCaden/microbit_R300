@@ -9,6 +9,11 @@ argument-hint: "Optional: which repo, or 'docs only' to skip the build gate"
 Bring the repository documentation in line with the code that was just changed, then
 make **one** commit on the current branch.
 
+**This skill is a team standard, which is why it is committed.** Everyone working in these
+repos should follow the same routing, row shape, commit-message convention and build gate —
+if you skip a step, the docs stop agreeing with each other. Personal shortcuts do not belong
+here; they live in `~/.copilot/skills/` instead.
+
 Works in: `CompanionRobots`, `MicroBit`, `EmotionDisplay`.
 Not yet migrated: `r300-motor-code` (separate owner; do not apply this skill there).
 
