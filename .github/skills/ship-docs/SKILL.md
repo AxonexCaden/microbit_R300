@@ -39,6 +39,43 @@ one document, one path.
 Never put a board- or component-specific detail in the root docs. Never write a pointer where
 an explanation is expected: "see Phase 277" alone teaches the reader nothing.
 
+## Locks: four exclusive lanes
+
+Some operations must never run twice at once on this machine. Take the matching lock with
+`scripts/lock.py`; it blocks until the lock is free and passes the wrapped command's exit code.
+
+| Lane | `BUILD_LOCK_PATH` | Scope | Why |
+|---|---|---|---|
+| build | `/tmp/companionrobots-build.lock` (default) | global | all repos share one IDF tree, venv, component cache and ccache |
+| git | `/tmp/git-<repo>.lock` | per repo | `.git/index.lock` and non-fast-forward: two pushes to one repo always fight |
+| gh | `/tmp/gh-<repo>.lock` | per repo | Actions `concurrency` cancels in-progress runs; the issue index is one table |
+| flash | `/tmp/flash.lock` | global | one serial port |
+
+```bash
+# build lane (custom_release.py already takes it, so you normally do not)
+python3 scripts/lock.py 'python3 scripts/custom_release.py --build pengu'
+
+# git lane — commit and push under one lock, so a second agent queues instead of racing
+BUILD_LOCK_PATH=/tmp/git-CompanionRobots.lock \
+  python3 scripts/lock.py 'git add -A && git commit -F /tmp/msg && git push origin HEAD'
+
+# gh lane — never dispatch the same workflow + ref twice
+BUILD_LOCK_PATH=/tmp/gh-CompanionRobots.lock \
+  python3 scripts/lock.py 'gh workflow run build-companion.yml --ref <branch>'
+```
+
+The lock is advisory and only protects what runs inside it. It does **not** resolve conflicts:
+if `git push` is rejected, `git pull --rebase` and push again — never `--force`.
+
+### Order is not optional
+
+```
+docs written → commit → push → CI dispatch → watch → issue index → verify
+```
+
+Never open a PR before the push lands, never close an issue before CI is green, and never let
+two agents edit the issue index.
+
 ## Procedure
 
 1. **See what changed.** `git status --porcelain=v1 -b` and `git diff` (plus `git diff --stat`
@@ -72,9 +109,10 @@ an explanation is expected: "see Phase 277" alone teaches the reader nothing.
 6. **Verify.**
    - `python3 scripts/check_docs.py` — links, anchors, TOC numbers. MB and ED must report
      `ok: N markdown file(s)`.
-   - **CompanionRobots has a known baseline of ~40 findings** (hand-abbreviated anchors in the
-     R300 and characters TOCs, two links to folders deleted in 2026-10). Do not fix them here.
-     Gate instead on "the count did not go up": capture the number before step 5 and compare.
+   - **CompanionRobots has a known baseline of findings** (hand-abbreviated TOC anchors, links to
+     folders deleted in 2026-10). It was 39 on 2026-11-04 and the number moves as docs are edited.
+     Do not fix them here. Gate on "the count did not go up": capture the number before step 5 and
+     compare after.
    - `grep -rn "<old path or old heading>"` for anything you moved or renamed.
    - No conflict markers: `grep -rn '^<<<<<<<\|^>>>>>>>' --include='*.md' .`.
 
@@ -88,7 +126,7 @@ an explanation is expected: "see Phase 277" alone teaches the reader nothing.
    - If a build fails, fix the cause or stop and report it. Do not retry blindly, and do not
      commit a failed build.
 
-8. **Commit once**, all changed files, on the current branch:
+8. **Commit once**, all changed files, on the current branch, under the git lock (see [Locks](#locks-four-exclusive-lanes)):
 
    Header — `[<scope>] <type>(<layer>): <Summary>`
    - `scope`: CR → board-profile (`R300-edu-microbit-pengu`, `R100v3-head`, `R100v3-body`), or
@@ -103,7 +141,8 @@ an explanation is expected: "see Phase 277" alone teaches the reader nothing.
    - No `Co-Authored-By` trailer in these repos.
 
 9. **Push** to the current branch when the user asked to ship (this skill is usually invoked as
-   "ship it"). Never `--force`, never rebase a shared branch, never push to `upstream`.
+   "ship it"), in the same git-lock command. If the push is rejected, `git pull --rebase`
+   and push again. Never `--force`, never rebase a shared branch, never push to `upstream`.
 
 ## Merge conflicts
 
