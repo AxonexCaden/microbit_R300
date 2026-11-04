@@ -155,6 +155,10 @@ two agents edit the issue index.
    "ship it"), in the same git-lock command. If the push is rejected, `git pull --rebase`
    and push again. Never `--force`, never rebase a shared branch, never push to `upstream`.
 
+   ⚠️ **If a branch name also exists as a directory, the bare name is ambiguous.** EmotionDisplay
+   has a `main/` folder, so `git log main` / `git branch -f main …` can be read as a path. Use the
+   full ref there: `git update-ref refs/heads/main <sha>`, `git push origin HEAD:refs/heads/main`.
+
 ## Merge conflicts
 
 Everyone runs ship-docs on their own branch, so the index files conflict on most merges.
