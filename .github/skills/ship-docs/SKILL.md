@@ -116,10 +116,13 @@ two agents edit the issue index.
    - `grep -rn "<old path or old heading>"` for anything you moved or renamed.
    - No conflict markers: `grep -rn '^<<<<<<<\|^>>>>>>>' --include='*.md' .`.
 
-7. **Build only if code changed.** Docs alone never need a build. If the change touched
-   `sdkconfig.defaults*`, `CMakeLists.txt`, `Kconfig.projbuild`, `partitions.csv`, `ci/products.json`
-   or a `character.json`, this is not an incremental build — use the
-   [clean-release](../clean-release/SKILL.md) skill instead.
+7. **Build only if code changed.** Docs alone never need a build.
+   - If the change touched `sdkconfig.defaults*`, `CMakeLists.txt`, `Kconfig.projbuild`,
+     `partitions.csv`, `ci/products.json` or a `character.json`, an incremental build is **not**
+     enough: delete exactly one variant build dir (`build/<variant>/`, derived by
+     `variant_dir_name()` in `scripts/custom_release.py`) and rebuild. Never `rm -rf build/`,
+     never `idf.py fullclean` — the variant dir owns its own `sdkconfig`, so deleting it is the
+     whole reset. (A local-only `clean-release` skill walks through this; it is not in the repo.)
    - CR: `python3 scripts/custom_release.py <board> --name <name>` (18 s incremental; never bare
      `idf.py build`, never `rm -rf build/`).
    - MB: `python3 scripts/custom_release.py --name <name>` — an EXIT 0 is the only proof the
