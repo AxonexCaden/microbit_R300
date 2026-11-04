@@ -4,8 +4,7 @@
     "description": "Talk to the R300 companion robot over the P0/P1 UART link",
     "dependencies": {
         "core": "*",
-        "radio": "*",
-        "microphone": "*"
+        "radio": "*"
     },
     "files": [
         "README.md",

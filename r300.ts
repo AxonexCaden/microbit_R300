@@ -308,14 +308,16 @@ namespace r300 {
         Relaxed,
         //% block="delicious"
         Delicious,
-        // The two custom slots. Their names are literal: the monitors carry them as
-        // "custom1" / "custom2", so there is nothing to translate — the wire string is the
-        // enum name, lowercased. A profile that has no art for them still ACCEPTS the
-        // request (R300 only checks the format), it just has nothing to draw.
+        // The three custom slots. Their names are literal: the monitors carry them as
+        // "custom1" / "custom2" / "custom3", so there is nothing to translate — the wire
+        // string is the enum name, lowercased. A profile that has no art for them still
+        // ACCEPTS the request (R300 only checks the format), it just has nothing to draw.
         //% block="custom1"
         Custom1,
         //% block="custom2"
         Custom2,
+        //% block="custom3"
+        Custom3,
     }
 
     function emojiName(e: Emoji): string {
@@ -343,6 +345,7 @@ namespace r300 {
             case Emoji.Delicious: return "delicious"
             case Emoji.Custom1: return "custom1"
             case Emoji.Custom2: return "custom2"
+            case Emoji.Custom3: return "custom3"
         }
         return "happy"
     }

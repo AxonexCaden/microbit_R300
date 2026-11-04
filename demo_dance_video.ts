@@ -56,13 +56,13 @@
 // ⚠️ R300 refuses it while anything else owns the chassis, and nothing reports the end, so the
 // 32 s below is this side's own estimate (the dance's last beat is at 30.998 s). It only holds
 // the guard so A cannot start on top of it — it does not stop the robot.
-// ⚠️ The face goes FIRST, and it is the one block call here rather than a raw send: "custom1" is
-// now a member of r300.Emoji, so the wire string comes from emojiName like every other face —
-// no second copy of the name, and nothing to keep in sync if the art is ever renamed.
+// ⚠️ The face goes FIRST. r300.emoji() is called directly, not through
+// r300_emotion.showFace(): that wrapper only forwards, and this file is over the
+// flash budget, so the one function it costs is gone. Same wire string (emojiName).
 function danceBduck(): void {
     if (dancing) return
     dancing = true
-    r300_emotion.showFace(r300.Emoji.Custom1)
+    r300.emoji(r300.Emoji.Custom1)
     r300.send("bduck_dance_set", "{\"on\":1}")
     basic.pause(32000)
     dancing = false
@@ -191,7 +191,7 @@ function performActiveSummerDance(): void {
 
     // ── Bar 1 (0 – 2.9 s) — greeting: the hands rise, the wheels rock under them ─
     at(128)
-    r300_emotion.showFace(r300.Emoji.Cool)
+    r300.emoji(r300.Emoji.Cool)
     r300_hands.moveHands(90, 90)                   // BOTH down: the starting pose
     at(832)
     r300_hands.moveHands(0, -1)                    // RIGHT only, up...
@@ -273,7 +273,7 @@ function performActiveSummerDance(): void {
     // bar 4, so the routine ends where it started, facing the way it started.
     at(15616)
     r300_hands.moveHands(0, 0)                     // BOTH up: the punch
-    r300_emotion.showFace(r300.Emoji.Happy)
+    r300.emoji(r300.Emoji.Happy)
     dancing = false
 }
 
@@ -290,8 +290,9 @@ let dancing = false
 // Wait for the handshake before the button does anything (the radio handler above does NOT
 // wait — see its note): R300 ignores the link for about ten seconds after power-up, and a
 // request sent before that is answered as a failure.
+// ⚠️ No showIcon()/clearScreen() here any more: the pair costs 40 bytes of flash and the
+// program has none to spare (showIcon alone still put it 16 bytes over). A blank screen for
+// the ten seconds R300 spends warming up is the honest signal.
 while (!(r300_status.isConnected())) {
-    basic.showIcon(IconNames.No)
     basic.pause(200)
 }
-basic.clearScreen()

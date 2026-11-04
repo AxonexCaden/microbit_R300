@@ -582,6 +582,14 @@ cp built/binary.hex /Volumes/MICROBIT/       # or drag the .hex onto the drive
    DAPLink reboots the board the moment the last byte lands. If `cp` sits there
    without writing, stop it and drag `built/binary.hex` in Finder instead.
 
+⚠️ **2026-11-04: this demo has no bytes to spare.** `Custom3` costs a string, and the
+handshake wait lost `basic.showIcon(IconNames.No)` + `basic.clearScreen()` (40 B) to get back
+under the limit — the program had been **failing to build for days** (`too big by 36 bytes`)
+while the board kept running the last hex that fit. Any new block costs a build cycle to
+pay for; measure with `pxt build`, never guess. `r300_emotion.showFace()` is still exported
+for students, but `demo_dance_video.ts` calls `r300.emoji()` directly so the wrapper is not
+linked into the hex.
+
 `pxt deploy` is unreliable on this macOS setup — build by hand and copy the hex.
 
 To build and check the result without reading the log:
