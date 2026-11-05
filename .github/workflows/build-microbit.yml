@@ -68,14 +68,15 @@ jobs:
           node-version: "20"
           cache: npm
 
-      # `pxt` 係 MakeCode CLI：`npm install -g pxt` 之後佢會用 package.json 釘住嘅
-      # pxt-microbit / pxt-core（兩個都喺 node_modules 內）去 build。
+      # `pxt` 係 MakeCode CLI；`npm ci` 只裝 target package，`node_modules/pxtcli.json`
+      # （local-target 標記）同 `pxt_modules/` 都由 custom_release.py 補 —— 所以 CI 同
+      # 手提電腦行同一條命令，唔會各自有一套 bootstrap。
       - name: Install pxt
         run: |
           set -euo pipefail
           npm ci --no-audit --no-fund || npm install --no-audit --no-fund
           npm install -g pxt --no-audit --no-fund
-          pxt --version
+          pxt help > /dev/null 2>&1 || { echo "::error::pxt CLI 裝唔到"; exit 1; }
 
       # ⚠️ `pxt build` 報 `TS9283: program too big by N bytes` 就係**失敗** ——
       # 唔可以靠「有冇 hex 檔」判斷，一定要睇 exit code（pipe 後面要用 pipefail）。

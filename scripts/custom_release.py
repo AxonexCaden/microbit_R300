@@ -62,6 +62,29 @@ def git(*args: str) -> str:
         return ""
 
 
+def ensure_pxt_ready() -> int:
+    """A fresh clone has neither the local-target marker nor `pxt_modules/`.
+
+    `npm ci` installs the target package but not `node_modules/pxtcli.json`, the
+    file pxt reads to learn which target lives in `node_modules`; without it every
+    pxt command fails with "Cannot find node_modules/pxtcli.json nor pxtarget.json".
+    `pxt build` then also needs `pxt_modules/` (`pxt install` creates it). Both are
+    gitignored state, so a laptop already has them and CI does not — doing it here
+    keeps one entry point for both.
+    """
+    marker = ROOT / "node_modules" / "pxtcli.json"
+    if (ROOT / "node_modules" / "pxt-microbit").is_dir() and not marker.exists():
+        marker.write_text('{\n    "targetdir": "pxt-microbit"\n}\n', encoding="utf-8")
+        print(f"wrote {marker.relative_to(ROOT)} (local target marker)", file=sys.stderr, flush=True)
+    if not (ROOT / "pxt_modules").is_dir():
+        print("pxt_modules/ missing — running `pxt install`", file=sys.stderr, flush=True)
+        rc = subprocess.call(["pxt", "install"], cwd=ROOT)
+        if rc != 0:
+            print(f"pxt install failed (exit {rc})", file=sys.stderr)
+            return rc
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -99,7 +122,9 @@ def main() -> int:
     fd = acquire_lock()
     t0 = time.time()
     try:
-        rc = subprocess.call(["pxt", "build"], cwd=ROOT)
+        rc = ensure_pxt_ready()
+        if rc == 0:
+            rc = subprocess.call(["pxt", "build"], cwd=ROOT)
     finally:
         if fd is not None:
             print("[build-lock] released", file=sys.stderr, flush=True)
