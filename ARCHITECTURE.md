@@ -458,15 +458,14 @@ own wait, which is why a looking block has a timeout to fall back on.
 
 This repository is itself a MakeCode extension.
 
-This repository is itself a MakeCode extension.
-
 | Path | What |
 |---|---|
 | `pxt.json` | Extension manifest |
 | `protocol.ts` | Protocol layer: checksum, envelope, replies |
 | `r300.ts` | The block groups and the `r300` API; connects at power-up |
-| `test.ts` | Local test — compiled only when this repo is the top-level project |
-| `vision_only.ts` | VLM-only bench: the camera blocks with no AI conversation, built via `testFiles` |
+| `test.ts` | Local test — not in `pxt.json` `testFiles` today; add it there to compile it as the top-level project |
+| `vision_only.ts` | VLM-only bench: the camera blocks with no AI conversation — add it to `testFiles` to build it |
+| `demo_dance_video.ts` | The current `testFiles` entry — the dance demo, compiled into the hex |
 | `test_2.ts` · `test_emotion.ts` · `test_mcp_high_five.ts` | Bench demos, copied into MakeCode by hand |
 | `legacy/` | Retired MicroPython version, kept for reference |
 | `built/` | Build output — flash `built/binary.hex` |
