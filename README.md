@@ -118,7 +118,7 @@ pxt build                                    # → built/binary.hex
    without writing, stop it and drag `built/binary.hex` in Finder instead.
 
 **Build from GitHub instead.** Actions → **Build micro:bit firmware** → Run workflow
-(`products=mb-r300`), or press the micro:bit tab on the Cloudflare build form
+(`products=mb-r300`, the valid ids being the ones listed in `ci/products.json`), or press the micro:bit tab on the Cloudflare build form
 (`https://94338025.xyz/companion-build-form/`). The run uses the same
 `scripts/custom_release.py` entry point, uploads the hex to the GitHub artifact **and**
 to the shared Feishu Drive folder as `<stamp>_MB_r300_v<version>.hex`. It is

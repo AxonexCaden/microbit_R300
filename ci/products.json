@@ -1,0 +1,6 @@
+{
+    "_note": "micro:bit 嘅 `products` 輸入清單（`.github/workflows/build-microbit.yml`），亦係 Cloudflare build-form micro:bit tab 嘅來源。artifact 係 `.hex`（唔係 `.bin`），拖落 `/Volumes/MICROBIT` 就係燒錄。加新產品 = 加一行。",
+    "products": [
+        {"id": "mb-r300", "family": "microbit", "character": "extension", "desc": "micro:bit R300 extension（hex，drag 落 /Volumes/MICROBIT）"}
+    ]
+}
