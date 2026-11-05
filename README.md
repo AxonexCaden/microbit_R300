@@ -117,6 +117,13 @@ pxt build                                    # → built/binary.hex
    DAPLink reboots the board the moment the last byte lands. If `cp` sits there
    without writing, stop it and drag `built/binary.hex` in Finder instead.
 
+**Build from GitHub instead.** Actions → **Build micro:bit firmware** → Run workflow
+(`products=mb-r300`), or press the micro:bit tab on the Cloudflare build form
+(`https://94338025.xyz/companion-build-form/`). The run uses the same
+`scripts/custom_release.py` entry point, uploads the hex to the GitHub artifact **and**
+to the shared Feishu Drive folder as `<stamp>_MB_r300_v<version>.hex`. It is
+manual-only on purpose: every run installs the toolchain and pulls yotta dependencies.
+
 ⚠️ **The program has almost no bytes to spare.** Any new block costs a build cycle to pay for;
 measure with `pxt build` and never guess — the evidence is in
 [PROTOCOL_PROGRESS.md](PROTOCOL_PROGRESS.md) §1.

@@ -29,6 +29,29 @@ Any new block costs a build cycle to pay for; measure with `pxt build`, never gu
 for students, but `demo_dance_video.ts` calls `r300.emoji()` directly so the wrapper is not
 linked into the hex.
 
+### 1.1 A clean clone cannot build until two gitignored pieces exist
+
+- **`npm ci` gives you the target package but not `node_modules/pxtcli.json` — the file
+  `pxt` reads to learn which target lives in `node_modules`.** Without it every pxt
+  command dies with `Cannot find node_modules/pxtcli.json nor pxtarget.json`. It is not
+  in `package-lock.json` (it is not a package, it is a 35-byte JSON file), so a laptop
+  keeps it forever and CI never has it.
+  Evidence 2026-11-05, first CI run `41982690677` (`microbit_R300`, ubuntu-latest):
+  `npm ci` added 699 packages, then `pxt --version` exit 1 with that message.
+- **`pxt build` also needs `pxt_modules/`; a clean clone has none and pxt refuses with
+  `Package not installed: core, did you forget to run 'pxt install'?`**
+  Evidence: same session, fresh `git clone --depth 1` into `/tmp` → `npm ci` → `pxt build`
+  exit 1 with that line; `pxt install` (1.7 s) then `pxt build` (4.1 s) succeeded.
+- **Rule: `scripts/custom_release.py` creates both when they are missing**, so CI and a
+  laptop run the same entry point. A laptop is unaffected because both already exist there.
+- **⚠️ `pxt` has no `--version` flag, and `pxt help` exits 1 before a target resolves** —
+  neither works as a health check. The second CI run (`41982918388`) went red on exactly
+  that. Check `command -v pxt` and read versions from
+  `node_modules/pxt-*/package.json` instead.
+- **The build is byte-identical across machines**: fresh clone + bootstrap ⇒
+  `1,479,692 B`, sha256 `082fa810a3ef40db73f2a20f87bb7f508a66d6c033bc4c7d5d462467ac90335b`,
+  the same digest the laptop produces. That is what makes a CI artifact safe to hand out.
+
 ## 2. Flash
 
 - **`pxt deploy` is unreliable on this macOS setup — build by hand and drag the hex.**
