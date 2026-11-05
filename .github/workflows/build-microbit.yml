@@ -50,18 +50,26 @@ jobs:
           IN_PRODUCTS: ${{ inputs.products }}
         run: |
           set -euo pipefail
-          pick=$(printf '%s' "$IN_PRODUCTS" | tr ',' '\n' \
-            | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | { grep -v '^$' || true; })
-          if [ -z "$pick" ]; then pick="mb-r300"; fi
-          bad=""
-          for p in $pick; do
-            [ "$p" = "mb-r300" ] || bad="$bad $p"
-          done
-          if [ -n "$bad" ]; then
-            echo "::error::unknown product(s):$bad (只認 mb-r300)"
-            exit 1
-          fi
-          echo "name=r300" >> "$GITHUB_OUTPUT"
+          # 白名單同 --name 都嚟自 ci/products.json —— 加一個產品只改一行，唔使改 workflow。
+          printf '%s' "$IN_PRODUCTS" | tr ',' '\n' \
+            | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | { grep -v '^$' || true; } \
+            | { cat; } > /tmp/picked.txt
+          [ -s /tmp/picked.txt ] || echo 'mb-r300' > /tmp/picked.txt
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, sys
+          from pathlib import Path
+
+          rows = {r["id"]: r for r in json.loads(Path("ci/products.json").read_text(encoding="utf-8"))["products"]}
+          picked = [w for w in Path("/tmp/picked.txt").read_text(encoding="utf-8").split() if w]
+          bad = [w for w in picked if w not in rows]
+          if bad:
+              print(f"::error::unknown product(s): {', '.join(bad)}（ci/products.json 只有 {', '.join(sorted(rows))}）", file=sys.stderr)
+              sys.exit(1)
+          if len(set(picked)) > 1:
+              print("::error::this repo builds one extension at a time", file=sys.stderr)
+              sys.exit(1)
+          print(f"name={rows[picked[0]].get('name', 'r300')}")
+          PY
 
       - uses: actions/setup-node@v4
         with:
