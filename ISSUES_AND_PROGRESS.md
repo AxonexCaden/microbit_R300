@@ -35,7 +35,7 @@
 <!-- ISSUE-INDEX:BEGIN -->
 | # | Title | light | area | State | Updated |
 |---|---|---|---|---|---|
-| #6 | [task] CI 閘：build-microbit.yml 加 check_docs.py gate | — | — | open | 2026-11-05 |
+| #6 | [task] CI 閘：build-microbit.yml 加 check_docs.py gate | — | — | closed | 2026-11-05 |
 | #5 | [task] Feishu 測試線：補 upload_to_feishu 單元測試 | — | — | closed | 2026-11-05 |
 | #4 | [task] 文件／索引線：ARCHITECTURE §3 重複句、repo layout 校正、issue index 重生 | — | — | closed | 2026-11-05 |
 | #3 | [order] onboard-3：mention 喺 body | — | — | open | 2026-11-05 |
