@@ -36,8 +36,8 @@
 | # | Title | light | area | State | Updated |
 |---|---|---|---|---|---|
 | #6 | [task] CI 閘：build-microbit.yml 加 check_docs.py gate | — | — | open | 2026-11-05 |
-| #5 | [task] Feishu 測試線：補 upload_to_feishu 單元測試 | — | — | open | 2026-11-05 |
-| #4 | [task] 文件／索引線：ARCHITECTURE §3 重複句、repo layout 校正、issue index 重生 | — | — | open | 2026-11-05 |
+| #5 | [task] Feishu 測試線：補 upload_to_feishu 單元測試 | — | — | closed | 2026-11-05 |
+| #4 | [task] 文件／索引線：ARCHITECTURE §3 重複句、repo layout 校正、issue index 重生 | — | — | closed | 2026-11-05 |
 | #3 | [order] onboard-3：mention 喺 body | — | — | open | 2026-11-05 |
 | #2 | [onboard-2] 讀文件＋計劃 §27/§28.2，拆多條工作線 | — | — | open | 2026-11-05 |
 | #1 | [onboard] 讀文件 + git 歷史，交 12 行摘要 | — | — | open | 2026-11-05 |
