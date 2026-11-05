@@ -24,6 +24,7 @@ on:
 
 permissions:
   contents: read
+  issues: read
 
 # Group 帶住今次揀咗乜：同一個選擇再派 = 取消舊嗰個，派另一個選擇唔會剷走跑緊嗰個。
 concurrency:
@@ -43,6 +44,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # scripts/custom_release.py 要 git head/branch
+
+      # 文件／索引／測試閘：壞文件或者 stale index 要喺出 hex 之前紅，唔好出一個壞 hex。
+      - name: Check the docs
+        run: python3 scripts/check_docs.py
+
+      - name: Check the issue index
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/issue_index.py
+
+      - name: Run the upload tests
+        run: python3 -m unittest discover -s scripts/tests -q
 
       - id: pick
         name: Validate the product id
