@@ -76,7 +76,10 @@ jobs:
           set -euo pipefail
           npm ci --no-audit --no-fund || npm install --no-audit --no-fund
           npm install -g pxt --no-audit --no-fund
-          pxt help > /dev/null 2>&1 || { echo "::error::pxt CLI 裝唔到"; exit 1; }
+          # ⚠️ `pxt` 冇 `--version`，`pxt help` 喺未有 target 只會印 "Command not found"
+          # 然後 exit 1 —— 唔可以用佢做健康檢查（第一版就係咁紅）。版本睇 node_modules。
+          command -v pxt > /dev/null || { echo "::error::pxt CLI 唔喺 PATH"; exit 1; }
+          node -e "for (const p of ['pxt-microbit','pxt-core']) console.log(p, require('./node_modules/'+p+'/package.json').version)"
 
       # ⚠️ `pxt build` 報 `TS9283: program too big by N bytes` 就係**失敗** ——
       # 唔可以靠「有冇 hex 檔」判斷，一定要睇 exit code（pipe 後面要用 pipefail）。
