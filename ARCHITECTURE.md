@@ -466,7 +466,7 @@ This repository is itself a MakeCode extension.
 | `test.ts` | Local test — not in `pxt.json` `testFiles` today; add it there to compile it as the top-level project |
 | `vision_only.ts` | VLM-only bench: the camera blocks with no AI conversation — add it to `testFiles` to build it |
 | `demo_dance_video.ts` | The current `testFiles` entry — the dance demo, compiled into the hex |
-| `test_2.ts` · `test_emotion.ts` · `test_mcp_high_five.ts` | Bench demos, copied into MakeCode by hand |
+| `test_2.ts` · `test_emotion.ts` · `test_buttons_change_emotion.ts` · `test_mcp_high_five.ts` | Bench demos, copied into MakeCode by hand |
 | `legacy/` | Retired MicroPython version, kept for reference |
 | `built/` | Build output — flash `built/binary.hex` |
 
