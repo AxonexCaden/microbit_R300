@@ -8,7 +8,7 @@ The extension opens the link by itself when the micro:bit powers up: there is no
 connect block and nothing to switch on. You need a micro:bit V2 and an R300 EDU
 robot.
 
-**Updated:** 2026-11-04
+**Updated:** 2026-11-09
 
 ## Docs map
 
@@ -138,7 +138,33 @@ grep -inE "error|too big" /tmp/pxt_build.log
 ls -l built/binary.hex
 ```
 
-### Environment
+### Linux PC
+
+Tested on Ubuntu, 2026-11-09 — Node.js v26.13.0, npm 11.20.0, Python 3.14,
+pxt CLI 0.5.1. `pxt build` fetches its own target toolchain; no separate yotta
+install is needed.
+
+1. **Install once**, from the repo root (the folder holding `pxt.json`):
+
+    npm ci
+    npm install -g pxt
+
+2. **Build** — exit 0 gives `releases/r300_v<version>.hex` (also `built/binary.hex`):
+
+    python3 scripts/custom_release.py --name r300
+
+3. **Flash** — the board mounts at `/run/media/<user>/MICROBIT`:
+
+    cp releases/r300_v<version>.hex /run/media/<user>/MICROBIT/
+
+`custom_release.py` is the same entry point CI uses: it writes the
+`node_modules/pxtcli.json` local-target marker, runs `pxt install` for
+`pxt_modules/`, takes the machine-wide build lock, and exits non-zero on
+`error TS9283: program too big by N bytes` — check the exit code, not the log.
+The macOS warning against `cp` does not apply on Linux; success unmounts then
+remounts the drive.
+
+### macOS environment
 
 Verified on this machine, 2026-09-22:
 
