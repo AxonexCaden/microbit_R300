@@ -29,8 +29,11 @@ One-time Feishu setup (無 code 可以做，見 scripts/scripts_README.md 4):
   3. 卡片（可選）：`im:message:send_as_bot` → 群機械人加應用；chat_id 係 `oc_…`
 
 Environment (never hardcode): FEISHU_APP_ID, FEISHU_APP_SECRET, plus
-FEISHU_FOLDER_TOKEN (upload) / FEISHU_CHAT_ID (notify). Optional FEISHU_BASE for
-Lark international (`https://open.larksuite.com`; default is open.feishu.cn).
+FEISHU_FOLDER_TOKEN (root) / FEISHU_FOLDER_MB (microbit R300 subfolder, optional) /
+FEISHU_CHAT_ID (notify). Optional FEISHU_BASE for Lark international
+(`https://open.larksuite.com`; default is open.feishu.cn). Both folder variables may
+be a bare token or a whole `…/drive/folder/<token>?…` URL; without
+`FEISHU_FOLDER_MB` the upload goes to the root folder and prints one `[warn]`.
 
 Missing config prints `[SKIP]` and exits 0, so CI stays green before the secrets
 exist; pass `--strict` to turn that into a failure instead.
@@ -64,6 +67,15 @@ _NAME_RE = re.compile(r"^(?P<base>.+)_(?P<kind>full|ota|app)\.bin$")
 
 # People paste the whole folder URL, tracking query included. Take the token out of it.
 _FOLDER_URL_RE = re.compile(r"/drive/folder/(?P<token>[^/?#]+)")
+
+# The per-repo subfolder is created by hand in the Feishu UI (the app has no scope to
+# create or list folders), so the script knows it only by the name a reader sees.
+_SUBFOLDER_LABEL = "microbit R300"
+_SUBFOLDER_ENV = "FEISHU_FOLDER_MB"
+_SUBFOLDER_HINT = (
+    f"設定：Feishu Drive 開「{_SUBFOLDER_LABEL}」資料夾 → 添加協作者 → 揀應用 → 可編輯 → "
+    f"抄 URL 尾段 → 設 secret {_SUBFOLDER_ENV}"
+)
 
 # Short, stable tag per producing repo. Keep it 2-4 characters so it reads as a prefix,
 # not as part of the product id.
@@ -105,13 +117,27 @@ def _cfg(name: str) -> str:
     return (os.environ.get(name) or "").strip()
 
 
-def folder_token() -> str:
-    """`FEISHU_FOLDER_TOKEN` may be a bare token or a whole `…/drive/folder/<token>?…` URL."""
-    raw = _cfg("FEISHU_FOLDER_TOKEN")
+def _folder_token_from(env_name: str) -> str:
+    """A folder env var may be a bare token or a whole `…/drive/folder/<token>?…` URL."""
+    raw = _cfg(env_name)
     if not raw:
         return ""
     match = _FOLDER_URL_RE.search(raw)
     return match["token"] if match else raw.split("?")[0].strip()
+
+
+def folder_token() -> str:
+    """Root folder (`FEISHU_FOLDER_TOKEN`)."""
+    return _folder_token_from("FEISHU_FOLDER_TOKEN")
+
+
+def subfolder_token() -> str:
+    """`FEISHU_FOLDER_MB`, the hand-made microbit R300 folder; empty when not configured."""
+    return _folder_token_from(_SUBFOLDER_ENV)
+
+
+def _warn(message: str) -> None:
+    print(f"[warn] {message}")
 
 
 def _skip(message: str, strict: bool) -> int:
@@ -225,17 +251,37 @@ def cmd_upload(args: argparse.Namespace) -> int:
 
     stamp = _stamp() if args.stamp else ""
     tag = repo_tag(args.repo_tag)
-    folder = folder_token()
+    folder = subfolder_token()
+    label = f"{_SUBFOLDER_LABEL}/" if folder else ""
+    if not folder:
+        folder = folder_token()
+        if folder:
+            _warn(f"{_SUBFOLDER_ENV} 未設 —— 今次上載入 root；{_SUBFOLDER_HINT}")
     if not folder:
         return _skip("FEISHU_FOLDER_TOKEN 未設 —— 未上載", args.strict)
 
     for path in files:
         name = stamped_name(path, stamp, tag) if (stamp or tag) else path.name
         if args.dry_run:
-            print(f"[DRY] upload {path} as {name} ({path.stat().st_size} B) → folder {folder}")
+            print(f"[DRY] upload {path} as {label}{name} ({path.stat().st_size} B) → folder {folder}")
             continue
-        token = upload_file(path, name, folder)
-        print(f"[feishu] {name} → file_token={token}")
+        try:
+            token = upload_file(path, name, folder)
+        except RuntimeError as error:
+            # Layout problems must not fail the release: without the app as a folder
+            # collaborator Feishu answers 1061043, so send the unsent files to root.
+            if not (label and "1061043" in str(error)):
+                raise
+            _warn(
+                f"{_SUBFOLDER_LABEL} 上載失敗（code=1061043：app 唔係資料夾協作者）"
+                f" —— 未送嘅檔改送去 root；{_SUBFOLDER_HINT}"
+            )
+            folder = folder_token()
+            label = ""
+            if not folder:
+                return _skip("FEISHU_FOLDER_TOKEN 未設 —— 未上載", args.strict)
+            token = upload_file(path, name, folder)
+        print(f"[feishu] {label}{name} → file_token={token}")
     return 0
 
 
@@ -297,6 +343,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print(f"[doctor] base = {base_url()}")
     for name in ("FEISHU_APP_ID", "FEISHU_APP_SECRET", "FEISHU_FOLDER_TOKEN", "FEISHU_CHAT_ID"):
         print(f"  {'✓' if _cfg(name) else '·'} {name}{'' if _cfg(name) else '（未設）'}")
+    target = (
+        f"{_SUBFOLDER_LABEL}（{_SUBFOLDER_ENV}）"
+        if subfolder_token()
+        else "root（FEISHU_FOLDER_TOKEN）"
+    )
+    print(f"[doctor] 上載目標 = {target}")
     if not (_cfg("FEISHU_APP_ID") and _cfg("FEISHU_APP_SECRET")):
         print("[doctor] 憑證未設 —— 未做任何請求")
         return 1 if args.strict else 0
