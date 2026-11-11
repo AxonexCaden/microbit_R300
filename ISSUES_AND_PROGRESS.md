@@ -35,6 +35,12 @@
 <!-- ISSUE-INDEX:BEGIN -->
 | # | Title | light | area | State | Updated |
 |---|---|---|---|---|---|
+| #16 | [T5/5] 真 upload：build-microbit run 落 microbit R300 子資料夾 | — | — | open | 2026-11-11 |
+| #14 | [T4/5] README 補子資料夾／fallback／scope 限制 | — | — | closed | 2026-11-11 |
+| #12 | [T3/5] build-microbit.yml 加 FEISHU_FOLDER_MB env | — | — | closed | 2026-11-11 |
+| #10 | [T2/5] upload_to_feishu.py 支援 FEISHU_FOLDER_MB（含 1061043 fallback 與測試 isolation） | — | — | closed | 2026-11-11 |
+| #9 | [T2/5] upload_to_feishu.py 支援 FEISHU_FOLDER_MB（含 1061043 fallback 與測試 isolation） | — | — | closed | 2026-11-11 |
+| #7 | [T1/5] 建立 docs/feishu-subfolder-plan.md（Feishu 子資料夾計劃） | — | — | closed | 2026-11-11 |
 | #6 | [task] CI 閘：build-microbit.yml 加 check_docs.py gate | — | — | closed | 2026-11-05 |
 | #5 | [task] Feishu 測試線：補 upload_to_feishu 單元測試 | — | — | closed | 2026-11-05 |
 | #4 | [task] 文件／索引線：ARCHITECTURE §3 重複句、repo layout 校正、issue index 重生 | — | — | closed | 2026-11-05 |
