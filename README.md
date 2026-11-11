@@ -121,8 +121,17 @@ pxt build                                    # → built/binary.hex
 (`products=mb-r300`, the valid ids being the ones listed in `ci/products.json`), or press the micro:bit tab on the Cloudflare build form
 (`https://94338025.xyz/companion-build-form/`). The run uses the same
 `scripts/custom_release.py` entry point, uploads the hex to the GitHub artifact **and**
-to the shared Feishu Drive folder as `<stamp>_MB_r300_v<version>.hex`. It is
-manual-only on purpose: every run installs the toolchain and pulls yotta dependencies.
+to the **`CompanionRobots/microbit R300` subfolder** of the shared Feishu Drive folder
+as `<stamp>_MB_r300_v<version>.hex`. Set that subfolder with the repo secret
+**`FEISHU_FOLDER_MB`**; without the secret the upload falls back to the root folder
+(`FEISHU_FOLDER_TOKEN`) and prints one `[warn]`. The same fallback covers a subfolder
+the app cannot use — Feishu answers `1061043` when the app is not a collaborator — and
+the hex still uploads to the root, so a folder-layout problem never turns the release
+red. The Feishu app holds **only `drive:file:upload`**, not `drive:drive` or
+`drive:drive:readonly`, so it cannot create or list the subfolder: open it by hand in
+the Feishu UI, add the app as a collaborator, and copy the folder URL's tail into the
+secret. It is manual-only on purpose: every run installs the toolchain and pulls yotta
+dependencies.
 
 ⚠️ **The program has almost no bytes to spare.** Any new block costs a build cycle to pay for;
 measure with `pxt build` and never guess — the evidence is in
