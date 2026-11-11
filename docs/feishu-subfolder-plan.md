@@ -35,7 +35,7 @@
 | T2 | `scripts/upload_to_feishu.py`：讀 `FEISHU_FOLDER_MB`（bare token 或 `…/drive/folder/<token>?…` URL）、冇設就 fallback root 印一句 `[warn]`、`1061043` 都 fallback root、`doctor` 印「上載目標」；`scripts/tests/test_upload_to_feishu.py` 嘅 `_ISOLATED_ENV` 加 `FEISHU_FOLDER_MB` | `py_compile` exit 0；未設／已設／URL 形式三個 `--dry-run` 目標正確；stub `1061043` → fallback root 且 `cmd_upload` 回 0；`python3 -m unittest discover -s scripts/tests -q` 全過 | done | PR #11 → main c917a75 |
 | T3 | `.github/workflows/build-microbit.yml` 嘅 Upload step `env:` 加一行 `FEISHU_FOLDER_MB: ${{ secrets.FEISHU_FOLDER_MB }}` | `grep -c FEISHU_FOLDER_MB .github/workflows/build-microbit.yml` = 1；workflow YAML 可 parse；除呢一行外冇改動 | done | PR #13 → main 8f2affb |
 | T4 | `README.md` 第 124 行附近（「…to the shared Feishu Drive folder…」）加子資料夾、fallback、同 `drive:file:upload` 限制嘅說明 | `grep -c 'FEISHU_FOLDER_MB' README.md` ≥ 1；`grep -c '1061043' README.md` ≥ 1；`python3 scripts/check_docs.py` 過 | done | PR #15 → main a9eb71a |
-| T5 | 真 upload：`gh workflow run build-microbit.yml`，等 run 完，貼 log | run 綠；log 有 `[feishu] microbit R300/<stamp>_MB_r300_v<version>.hex`；**冇** `[warn]` | todo | — |
+| T5 | 真 upload：`gh workflow run build-microbit.yml`，等 run 完，貼 log | run 綠；log 有 `[feishu] microbit R300/<stamp>_MB_r300_v<version>.hex`；**冇** `[warn]` | done | run 42958602928 ✓ 1 file → microbit R300/ |
 
 ## 狀態圖例
 
@@ -48,3 +48,8 @@ done task=<ID> branch=<branch> sha=<sha7> pr=#<n>
 ```
 
 加 3 樣：**改咗邊幾個檔**、**逐條驗收命令 + 真實輸出**、**冇做／做唔到嘅嘢**。
+
+## 收尾
+
+microbit R300 嘅子資料夾上載線已完成：T1–T4 改動已落地，T5 喺 main 出綠 run 並將 1 個 hex 上載入 `microbit R300/`。CompanionRobots 未做。
+
