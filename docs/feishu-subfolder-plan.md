@@ -33,7 +33,7 @@
 |---|---|---|---|---|
 | T1 | 建立本檔 `docs/feishu-subfolder-plan.md`，內容照 T1 issue 原文 | 檔案存在、5 個 task 齊、狀態全部 `todo` | todo | — |
 | T2 | `scripts/upload_to_feishu.py`：讀 `FEISHU_FOLDER_MB`（bare token 或 `…/drive/folder/<token>?…` URL）、冇設就 fallback root 印一句 `[warn]`、`1061043` 都 fallback root、`doctor` 印「上載目標」；`scripts/tests/test_upload_to_feishu.py` 嘅 `_ISOLATED_ENV` 加 `FEISHU_FOLDER_MB` | `py_compile` exit 0；未設／已設／URL 形式三個 `--dry-run` 目標正確；stub `1061043` → fallback root 且 `cmd_upload` 回 0；`python3 -m unittest discover -s scripts/tests -q` 全過 | review | PR #11 @ 92b82be |
-| T3 | `.github/workflows/build-microbit.yml` 嘅 Upload step `env:` 加一行 `FEISHU_FOLDER_MB: ${{ secrets.FEISHU_FOLDER_MB }}` | `grep -c FEISHU_FOLDER_MB .github/workflows/build-microbit.yml` = 1；workflow YAML 可 parse；除呢一行外冇改動 | todo | — |
+| T3 | `.github/workflows/build-microbit.yml` 嘅 Upload step `env:` 加一行 `FEISHU_FOLDER_MB: ${{ secrets.FEISHU_FOLDER_MB }}` | `grep -c FEISHU_FOLDER_MB .github/workflows/build-microbit.yml` = 1；workflow YAML 可 parse；除呢一行外冇改動 | review | PR #13 @ c89982a |
 | T4 | `README.md` 第 124 行附近（「…to the shared Feishu Drive folder…」）加子資料夾、fallback、同 `drive:file:upload` 限制嘅說明 | `grep -c 'FEISHU_FOLDER_MB' README.md` ≥ 1；`grep -c '1061043' README.md` ≥ 1；`python3 scripts/check_docs.py` 過 | todo | — |
 | T5 | 真 upload：`gh workflow run build-microbit.yml`，等 run 完，貼 log | run 綠；log 有 `[feishu] microbit R300/<stamp>_MB_r300_v<version>.hex`；**冇** `[warn]` | todo | — |
 
