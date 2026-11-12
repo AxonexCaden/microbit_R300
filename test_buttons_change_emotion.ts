@@ -93,6 +93,9 @@ input.onButtonPressed(Button.B, function () {
     nextFace()
 })
 
+// Power-on splash: a heart on the micro:bit's own matrix while the board starts up.
+basic.showIcon(IconNames.Heart)
+
 // Wait for the handshake before anything is sent. R300 ignores the link for its first 10–15
 // seconds after power-on, and a face sent before that is answered as a failed request. The
 // buttons stay inert until `ready` is set, so a press during the wait cannot race the first
