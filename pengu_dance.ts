@@ -40,8 +40,10 @@
 // routine stretches by a small percentage over the 31 s. That does not matter silently; if you
 // add music later, re-time against one clock instead of the blocks' own pauses.
 //
-//   A    — dance (waits for the R300 link first)
-//   A+B  — stop the wheels now; the rest of the beats are skipped
+//   A          — dance (waits for the R300 link first)
+//   radio 42   — the same start, sent by pengu_dance_remote.ts on a second micro:bit
+//   radio 43   — stop, sent by the remote's B button
+//   A+B        — stop the wheels now; the rest of the beats are skipped
 //
 // Not part of the extension: add it to pxt.json's testFiles (one program at a time) when you
 // flash it.
@@ -54,24 +56,55 @@ const HAND_RIGHT = [0, 90, 180, 90, 180, 90, 0, 0, 20, 160, 90, 0, 0, 90, 90, 0]
 const HAND_LEFT = [0, 90, 180, 180, 90, 90, 0, 90, 160, 20, 0, 0, 90, 90, 0, 0]
 let beatIndex = 0
 
+// Radio trigger. The remote board (pengu_dance_remote.ts) sends these on the same group; keep
+// all three numbers identical in the two programs.
+const RADIO_GROUP = 1
+const DANCE_TRIGGER = 42
+const STOP_TRIGGER = 43
+radio.setGroup(RADIO_GROUP)
+
 let dancing = false
 let stopped = false
 
+// ⚠️ startDance() blocks for the whole routine, so it must NEVER run inside the radio handler:
+// that handler would not return to receive the stop packet until the dance ended. inBackground
+// moves it to its own fiber; the `dancing` guard makes any extra fibers harmless. The A button
+// uses the same shape so a local dance cannot starve the button events either.
 input.onButtonPressed(Button.A, function () {
+    control.inBackground(startDance)
+})
+
+// The remote board's buttons: A starts (ignored while a dance is already running), B stops.
+radio.onReceivedNumber(function (receivedNumber: number) {
+    if (receivedNumber == DANCE_TRIGGER) control.inBackground(startDance)
+    else if (receivedNumber == STOP_TRIGGER) stopDance()
+})
+
+function startDance() {
     if (dancing) return
-    if (!awaitLink()) return
     dancing = true
     stopped = false
+    if (!awaitLink()) {
+        dancing = false
+        return
+    }
     dance()
     dancing = false
-})
+}
 
 // A move is waited out by drive(), which blocks this stack; the stop below runs in its own
 // fiber and interrupts the wheels, and `stopped` keeps the remaining beats from starting.
 input.onButtonPressed(Button.AB, function () {
+    stopDance()
+})
+
+// Shared by A+B and the remote's B. The drive() already in flight still runs out its own pause,
+// so the stack unwinds after it, but stopNow cuts the wheels immediately and `stopped` turns
+// every remaining beat into a no-op.
+function stopDance() {
     stopped = true
     r300_movement.stop()
-})
+}
 
 function dance() {
     r300_movement.stop()
