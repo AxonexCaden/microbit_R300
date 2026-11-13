@@ -8,7 +8,7 @@ The extension opens the link by itself when the micro:bit powers up: there is no
 connect block and nothing to switch on. You need a micro:bit V2 and an R300 EDU
 robot.
 
-**Updated:** 2026-11-04
+**Updated:** 2026-11-09
 
 ## Docs map
 
@@ -117,6 +117,22 @@ pxt build                                    # → built/binary.hex
    DAPLink reboots the board the moment the last byte lands. If `cp` sits there
    without writing, stop it and drag `built/binary.hex` in Finder instead.
 
+**Build from GitHub instead.** Actions → **Build micro:bit firmware** → Run workflow
+(`products=mb-r300`, the valid ids being the ones listed in `ci/products.json`), or press the micro:bit tab on the Cloudflare build form
+(`https://94338025.xyz/companion-build-form/`). The run uses the same
+`scripts/custom_release.py` entry point, uploads the hex to the GitHub artifact **and**
+to the **`CompanionRobots/microbit R300` subfolder** of the shared Feishu Drive folder
+as `<stamp>_MB_r300_v<version>.hex`. Set that subfolder with the repo secret
+**`FEISHU_FOLDER_MB`**; without the secret the upload falls back to the root folder
+(`FEISHU_FOLDER_TOKEN`) and prints one `[warn]`. The same fallback covers a subfolder
+the app cannot use — Feishu answers `1061043` when the app is not a collaborator — and
+the hex still uploads to the root, so a folder-layout problem never turns the release
+red. The Feishu app holds **only `drive:file:upload`**, not `drive:drive` or
+`drive:drive:readonly`, so it cannot create or list the subfolder: open it by hand in
+the Feishu UI, add the app as a collaborator, and copy the folder URL's tail into the
+secret. It is manual-only on purpose: every run installs the toolchain and pulls yotta
+dependencies.
+
 ⚠️ **The program has almost no bytes to spare.** Any new block costs a build cycle to pay for;
 measure with `pxt build` and never guess — the evidence is in
 [PROTOCOL_PROGRESS.md](PROTOCOL_PROGRESS.md) §1.
@@ -131,7 +147,33 @@ grep -inE "error|too big" /tmp/pxt_build.log
 ls -l built/binary.hex
 ```
 
-### Environment
+### Linux PC
+
+Tested on Ubuntu, 2026-11-09 — Node.js v26.13.0, npm 11.20.0, Python 3.14,
+pxt CLI 0.5.1. `pxt build` fetches its own target toolchain; no separate yotta
+install is needed.
+
+1. **Install once**, from the repo root (the folder holding `pxt.json`):
+
+    npm ci
+    npm install -g pxt
+
+2. **Build** — exit 0 gives `releases/r300_v<version>.hex` (also `built/binary.hex`):
+
+    python3 scripts/custom_release.py --name r300
+
+3. **Flash** — the board mounts at `/run/media/<user>/MICROBIT`:
+
+    cp releases/r300_v<version>.hex /run/media/<user>/MICROBIT/
+
+`custom_release.py` is the same entry point CI uses: it writes the
+`node_modules/pxtcli.json` local-target marker, runs `pxt install` for
+`pxt_modules/`, takes the machine-wide build lock, and exits non-zero on
+`error TS9283: program too big by N bytes` — check the exit code, not the log.
+The macOS warning against `cp` does not apply on Linux; success unmounts then
+remounts the drive.
+
+### macOS environment
 
 Verified on this machine, 2026-09-22:
 

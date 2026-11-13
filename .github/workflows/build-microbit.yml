@@ -1,0 +1,160 @@
+# micro:bit extension — 手動 firmware build。
+#
+# 手動 only（冇 push / PR trigger）：每次 run 都要裝 pxt ＋ 拉 yotta 依賴。
+# 入口同本機一樣係 scripts/custom_release.py（佢內部跑 `pxt build`），
+# 所以 CI 出嘅 hex 同本機出嘅係同一條命令嘅結果。
+#
+# 呢個 repo 係 **public**：workflow_dispatch 唔會由 fork 觸發，secrets 亦唔會
+# 傳去 fork 嘅 run，所以 Feishu 憑證放喺呢度同放喺 private repo 一樣安全。
+#
+# 產品 id（Cloudflare build form 派呢個）：mb-r300
+name: Build micro:bit firmware
+
+on:
+  workflow_dispatch:
+    inputs:
+      products:
+        description: "（可選）product id、逗號分隔——目前只有 mb-r300"
+        type: string
+        default: ""
+      retention_days:
+        description: "Artifact 保留日數"
+        type: number
+        default: 30
+
+permissions:
+  contents: read
+  issues: read
+
+# Group 帶住今次揀咗乜：同一個選擇再派 = 取消舊嗰個，派另一個選擇唔會剷走跑緊嗰個。
+concurrency:
+  group: build-microbit-${{ inputs.products || 'default' }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build r300 extension
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # scripts/custom_release.py 要 git head/branch
+
+      # 文件／索引／測試閘：壞文件或者 stale index 要喺出 hex 之前紅，唔好出一個壞 hex。
+      - name: Check the docs
+        run: python3 scripts/check_docs.py
+
+      - name: Check the issue index
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/issue_index.py
+
+      - name: Run the upload tests
+        run: python3 -m unittest discover -s scripts/tests -q
+
+      - id: pick
+        name: Validate the product id
+        env:
+          IN_PRODUCTS: ${{ inputs.products }}
+        run: |
+          set -euo pipefail
+          # 白名單同 --name 都嚟自 ci/products.json —— 加一個產品只改一行，唔使改 workflow。
+          printf '%s' "$IN_PRODUCTS" | tr ',' '\n' \
+            | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | { grep -v '^$' || true; } \
+            | { cat; } > /tmp/picked.txt
+          [ -s /tmp/picked.txt ] || echo 'mb-r300' > /tmp/picked.txt
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, sys
+          from pathlib import Path
+
+          rows = {r["id"]: r for r in json.loads(Path("ci/products.json").read_text(encoding="utf-8"))["products"]}
+          picked = [w for w in Path("/tmp/picked.txt").read_text(encoding="utf-8").split() if w]
+          bad = [w for w in picked if w not in rows]
+          if bad:
+              print(f"::error::unknown product(s): {', '.join(bad)}（ci/products.json 只有 {', '.join(sorted(rows))}）", file=sys.stderr)
+              sys.exit(1)
+          if len(set(picked)) > 1:
+              print("::error::this repo builds one extension at a time", file=sys.stderr)
+              sys.exit(1)
+          print(f"name={rows[picked[0]].get('name', 'r300')}")
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      # `pxt` 係 MakeCode CLI；`npm ci` 只裝 target package，`node_modules/pxtcli.json`
+      # （local-target 標記）同 `pxt_modules/` 都由 custom_release.py 補 —— 所以 CI 同
+      # 手提電腦行同一條命令，唔會各自有一套 bootstrap。
+      - name: Install pxt
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+          npm install -g pxt --no-audit --no-fund
+          # ⚠️ `pxt` 冇 `--version`，`pxt help` 喺未有 target 只會印 "Command not found"
+          # 然後 exit 1 —— 唔可以用佢做健康檢查（第一版就係咁紅）。版本睇 node_modules。
+          command -v pxt > /dev/null || { echo "::error::pxt CLI 唔喺 PATH"; exit 1; }
+          node -e "for (const p of ['pxt-microbit','pxt-core']) console.log(p, require('./node_modules/'+p+'/package.json').version)"
+
+      # ⚠️ `pxt build` 報 `TS9283: program too big by N bytes` 就係**失敗** ——
+      # 唔可以靠「有冇 hex 檔」判斷，一定要睇 exit code（pipe 後面要用 pipefail）。
+      - id: meta
+        name: Build
+        env:
+          GIT_STAMP_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          python3 scripts/custom_release.py --name r300 --json | tee /tmp/meta.json
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, pathlib
+          meta = json.loads(pathlib.Path("/tmp/meta.json").read_text(encoding="utf-8").strip().splitlines()[-1])
+          print(f"hex={meta['artifact']}")
+          print(f"size={meta['size']}")
+          print(f"sha256={meta['sha256']}")
+          print(f"sha7={meta.get('head', '')[:7]}")
+          PY
+
+      - name: Report sizes + checksums
+        run: |
+          set -euo pipefail
+          ls -l built/binary.hex releases/ || true
+          sha256sum built/binary.hex releases/*.hex || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mb-r300_${{ steps.meta.outputs.sha7 }}
+          path: |
+            releases/*.hex
+            built/binary.hex
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days }}
+
+      # GitHub artifact 係備份；Feishu 係非開發者攞到嘅一份。缺 secret ⇒ job RED
+      # （--strict）—— 綠燈但冇交貨係更差嘅失敗。
+      - name: Upload to Feishu
+        env:
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          FEISHU_FOLDER_TOKEN: ${{ secrets.FEISHU_FOLDER_TOKEN }}
+          FEISHU_FOLDER_MB: ${{ secrets.FEISHU_FOLDER_MB }}
+        run: |
+          set -euo pipefail
+          PY=""
+          for P in python3 python; do
+            command -v "$P" >/dev/null 2>&1 || continue
+            if ! "$P" -c 'import requests' 2>/dev/null; then
+              "$P" -m pip install --quiet --disable-pip-version-check requests >/dev/null 2>&1 || true
+            fi
+            if "$P" -c 'import requests' 2>/dev/null; then PY="$P"; break; fi
+          done
+          [ -n "$PY" ] || { echo "::error::no python can import requests (pip install failed)"; exit 1; }
+          echo "python: $PY"
+          "$PY" scripts/upload_to_feishu.py --strict upload --stamp releases/*.hex
