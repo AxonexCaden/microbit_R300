@@ -11,7 +11,7 @@
 name: Build micro:bit firmware
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       products:
         description: "（可選）product id、逗號分隔——目前只有 mb-r300"
@@ -27,10 +27,6 @@ permissions:
   issues: read
 
 # Group 帶住今次揀咗乜：同一個選擇再派 = 取消舊嗰個，派另一個選擇唔會剷走跑緊嗰個。
-concurrency:
-  group: build-microbit-${{ inputs.products || 'default' }}-${{ github.ref }}
-  cancel-in-progress: true
-
 defaults:
   run:
     shell: bash
