@@ -30,7 +30,7 @@ jobs:
   nightly:
     # The cron fires every night but does nothing until the repository variable is set.
     if: vars.NIGHTLY_ENABLED == 'true' || github.event_name == 'workflow_dispatch'
-    uses: AxonexCaden/ci-workflows/.github/workflows/nightly-build.yml@main
+    uses: AxonexCaden/ci-workflows/.github/workflows/nightly-build.yml@de813c52c2312d9299f4d60e421a15efa081f944
     with:
       workflow: build-microbit.yml
       force: ${{ inputs.force || false }}
