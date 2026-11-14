@@ -1,0 +1,22 @@
+name: Build mb-r300
+
+# One product, one workflow. The build itself lives in _build.yml so there is a single
+# copy of the logic; this file only says which product to build.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: build-mb-r300-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    uses: ./.github/workflows/_build.yml
+    with:
+      products: mb-r300
+    secrets: inherit
