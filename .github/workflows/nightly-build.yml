@@ -104,12 +104,18 @@ jobs:
           fi
 
           truncated=$(printf '%s' "$cmp" | jq '(.files | length) >= 300')
+          seen=$(printf '%s' "$cmp" | jq '(.files | length)')
+          ahead=$(printf '%s' "$cmp" | jq '.ahead_by')
           real=$(printf '%s' "$cmp" | jq -r '.files[].filename' |
             grep -vE '(^docs/|\.md$|^README|^LICENSE|^CHANGELOG|^\.github/(ISSUE_TEMPLATE|PULL_REQUEST_TEMPLATE))' |
             head -5 || true)
 
           if [ "$truncated" = "true" ]; then
             decide true "compare truncated at 300 files"
+          elif [ "$seen" = "0" ] && [ "$ahead" != "0" ]; then
+            # Commits ahead with an empty file list: GitHub hides workflow-only
+            # diffs from the compare API, so "no files" is not proof of docs-only.
+            decide true "$ahead commit(s) with no visible files — cannot prove docs-only"
           elif [ -n "$real" ]; then
             decide true "build-relevant: $(echo "$real" | tr '\n' ' ')"
           else
