@@ -1,11 +1,11 @@
 name: Nightly build
 
-# 03:00 HKT = 19:00 UTC. GitHub cron is UTC-only and Hong Kong has no DST.
-# The cron fires every night, but `check` is skipped until the repository
-# variable NIGHTLY_ENABLED is set to "true" — manual runs always go through,
-# so the whole thing can be exercised before it is ever scheduled.
+# The nightly logic lives in AxonexCaden/ci-workflows so there is one copy to fix.
+# This file only owns the cron, the manual inputs and the NIGHTLY_ENABLED gate.
+
 on:
   schedule:
+    # 03:00 HKT = 19:00 UTC (GitHub cron is UTC; Hong Kong has no DST)
     - cron: "0 19 * * *"
   workflow_dispatch:
     inputs:
@@ -20,129 +20,18 @@ on:
 
 permissions:
   contents: read
-  actions: write # to dispatch the build workflow below
+  actions: write # to dispatch the build workflow
 
 concurrency:
   group: nightly-build
   cancel-in-progress: false
 
 jobs:
-  check:
+  nightly:
+    # The cron fires every night but does nothing until the repository variable is set.
     if: vars.NIGHTLY_ENABLED == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    outputs:
-      build: ${{ steps.decide.outputs.build }}
-      products: ${{ steps.decide.outputs.products }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          sparse-checkout: ci
-          sparse-checkout-cone-mode: false
-
-      - name: Has main changed since the last attempt?
-        id: decide
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          WF: build-microbit.yml
-          FORCE: ${{ inputs.force }}
-          DRY_RUN: ${{ inputs.dry_run }}
-        run: |
-          set -euo pipefail
-
-          sha=$(gh api "repos/$REPO/commits/main" --jq .sha)
-          busy=$(gh api \
-            "repos/$REPO/actions/workflows/$WF/runs?branch=main&status=in_progress&per_page=1" \
-            --jq '.total_count')
-          # status=completed (success *or* failure): a failed attempt counts as
-          # "tried", so a broken commit is not re-dispatched every night.
-          last=$(gh api \
-            "repos/$REPO/actions/workflows/$WF/runs?branch=main&status=completed&per_page=1" \
-            --jq '.workflow_runs[0] | "\(.head_sha) \(.conclusion)"')
-          last_sha=${last%% *}
-          last_concl=${last##* }
-          ids=$(python3 -c 'import json;print(",".join(p["id"] for p in json.load(open("ci/products.json"))["products"]))')
-
-          echo "main:        $sha"
-          echo "last tried:  ${last_sha:-<never>} (${last_concl:-—})"
-          echo "in progress: $busy"
-          echo "products:    $ids"
-          echo "products=$ids" >> "$GITHUB_OUTPUT"
-
-          decide() { # decide <true|false> <reason>
-            echo "decision: $1 — $2"
-            if [ "$DRY_RUN" = "true" ]; then
-              echo "dry run: nothing dispatched" >&2
-              echo "build=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "build=$1" >> "$GITHUB_OUTPUT"
-            fi
-          }
-
-          # Use `if`, not `[ … ] && { …; }`: under `set -e` a false test in an
-          # AND-list makes the whole list non-zero and kills the script.
-          if [ "$FORCE" = "true" ]; then
-            decide true "forced"
-            exit 0
-          fi
-          if [ "$busy" != "0" ]; then
-            decide false "a run of $WF is already in progress"
-            exit 0
-          fi
-          if [ -z "$last_sha" ]; then
-            decide true "no completed run yet"
-            exit 0
-          fi
-          if [ "$sha" = "$last_sha" ]; then
-            decide false "already attempted ($last_concl)"
-            exit 0
-          fi
-
-          if ! cmp=$(gh api "repos/$REPO/compare/$last_sha...$sha?per_page=100" 2>/dev/null); then
-            decide true "compare unavailable ($last_sha...$sha)"
-            exit 0
-          fi
-
-          truncated=$(printf '%s' "$cmp" | jq '(.files | length) >= 300')
-          seen=$(printf '%s' "$cmp" | jq '(.files | length)')
-          ahead=$(printf '%s' "$cmp" | jq '.ahead_by')
-          real=$(printf '%s' "$cmp" | jq -r '.files[].filename' |
-            grep -vE '(^docs/|\.md$|^README|^LICENSE|^CHANGELOG|^\.github/(ISSUE_TEMPLATE|PULL_REQUEST_TEMPLATE))' |
-            head -5 || true)
-
-          if [ "$truncated" = "true" ]; then
-            decide true "compare truncated at 300 files"
-          elif [ "$seen" = "0" ] && [ "$ahead" != "0" ]; then
-            # Commits ahead with an empty file list: GitHub hides workflow-only
-            # diffs from the compare API, so "no files" is not proof of docs-only.
-            decide true "$ahead commit(s) with no visible files — cannot prove docs-only"
-          elif [ -n "$real" ]; then
-            decide true "build-relevant: $(echo "$real" | tr '\n' ' ')"
-          else
-            decide false "docs-only change"
-          fi
-
-      - name: Summary
-        if: always()
-        run: |
-          {
-            echo "### Nightly build check"
-            echo ""
-            echo "| | |"
-            echo "|---|---|"
-            echo "| build | \`${{ steps.decide.outputs.build }}\` |"
-            echo "| products | \`${{ steps.decide.outputs.products }}\` |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  dispatch:
-    needs: check
-    if: needs.check.outputs.build == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Dispatch every product
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          WF: build-microbit.yml
-          PRODUCTS: ${{ needs.check.outputs.products }}
-        run: gh workflow run "$WF" --repo "$REPO" --ref main -f products="$PRODUCTS"
+    uses: AxonexCaden/ci-workflows/.github/workflows/nightly-build.yml@main
+    with:
+      workflow: build-microbit.yml
+      force: ${{ inputs.force || false }}
+      dry_run: ${{ inputs.dry_run || false }}
