@@ -4,6 +4,11 @@ name: Nightly build
 # The cron fires every night, but `check` is skipped until the repository variable
 # NIGHTLY_ENABLED is "true"; manual runs always go through, so the whole thing can
 # be tested before it is ever scheduled.
+#
+# A nightly that rebuilds identical binaries is pure cost: when `main` has moved the
+# check job asks the compare API what changed and skips the product if *every* touched
+# path is CI or docs (.github/, docs/, *.md). Any doubt — API error, empty or truncated
+# file list — falls back to building, and `force: true` overrides everything.
 on:
   schedule:
     - cron: "0 19 * * *"
@@ -55,11 +60,46 @@ jobs:
           # State is per product because every product has its own workflow: the
           # last completed run of build-<id>.yml *is* that product's attempt.
           python3 - "$main" "$RUNNER_TEMP" <<'PY'
-          import json, os, pathlib, sys
+          import json, os, pathlib, re, subprocess, sys
 
           main, tmp = sys.argv[1], pathlib.Path(sys.argv[2])
           force = os.environ.get("FORCE") == "true"
           dry = os.environ.get("DRY_RUN") == "true"
+          repo = os.environ["REPO"]
+
+          # A commit that only touches CI or docs cannot change the firmware, so it
+          # must not cost a full rebuild (2026-11-14: "retention-days: 3" moved main
+          # on three repos and the binary came out identical). Anything not listed
+          # here still rebuilds — ci/products.json included.
+          NON_SOURCE = re.compile(r"^(\.github/|docs/|.*\.md$|\.gitignore$)")
+
+          _cfg_cache = {}
+
+          def config_only(old, new):
+              """True only when *every* path changed between old and new is CI/docs."""
+              key = (old, new)
+              if key in _cfg_cache:
+                  return _cfg_cache[key]
+              verdict = False                      # default: build (fail-safe)
+              try:
+                  out = subprocess.run(
+                      ["gh", "api", f"repos/{repo}/compare/{old}...{new}"],
+                      capture_output=True, text=True, check=True, timeout=30,
+                  ).stdout
+                  data = json.loads(out)
+                  files = [f["filename"] for f in data.get("files") or []]
+                  ahead = data.get("total_commits") or 0
+                  if data.get("status") == "identical" or ahead == 0:
+                      verdict = True
+                  elif files and len(files) < 300:
+                      # 300 is the compare API's file cap: a truncated list proves
+                      # nothing, and an empty list with commits ahead proves nothing
+                      # either (previously seen), so both fall through to "build".
+                      verdict = all(NON_SOURCE.match(f) for f in files)
+              except Exception as exc:             # 404, rate limit, bad JSON…
+                  print(f"  compare {old[:7]}...{new[:7]} unavailable ({exc.__class__.__name__}) — will build")
+              _cfg_cache[key] = verdict
+              return verdict
 
           products = [p["id"] for p in json.loads(pathlib.Path("ci/products.json").read_text())["products"]]
           by_file = {w["path"].split("/")[-1]: w["id"] for w in json.loads((tmp / "workflows.json").read_text())["workflows"]}
@@ -88,6 +128,8 @@ jobs:
                   plan.append({"workflow": wf, "why": "never built"})
               elif last[wid]["head_sha"] == main:
                   print(f"  {pid:<30} =  attempted ({last[wid]['conclusion']}) — skipped")
+              elif config_only(last[wid]["head_sha"], main):
+                  print(f"  {pid:<30} =  config-only since {last[wid]['head_sha'][:7]} — skipped")
               else:
                   plan.append({"workflow": wf, "why": f"main moved since {last[wid]['head_sha'][:7]}"})
 
