@@ -94,6 +94,13 @@ namespace r300 {
     // plain function rather than a nullable one so no caller needs an undefined check.
     export let onReply: (id: number, op: string, p: any) => void = function (id: number, op: string, p: any) { }
 
+    // A project's answer to an op this extension does not know -- a bench sensor, for example.
+    // Returns the ack payload JSON (including its own "st"), or "" to fall through to "noop".
+    // Runs on the serial RX event, so it must not block: cache a sensor reading in a loop and
+    // hand the cached value back here. A handler that throws is ignored, not allowed to take
+    // the link's only reader down with it.
+    export let onCustomRequest: (op: string, p: any) => string = null
+
     export function checksum256(s: string, len: number): number {
         let sum = 0
         for (let i = 0; i < len; i++) sum += s.charCodeAt(i)
@@ -358,6 +365,17 @@ namespace r300 {
                 }
             }
             return buildLine("a", id, op, "{\"st\":\"ok\"}")
+        }
+        // A project-provided op answers before the fallback, so tof_get (and any future bench
+        // op) does not have to live in this file. Built-ins above always win: a project cannot
+        // override live/hello/vol_done/detect_done/cam_done.
+        if (onCustomRequest) {
+            try {
+                const custom = onCustomRequest(op, msg["p"])
+                if (custom.length > 0) return buildLine("a", id, op, custom)
+            } catch (e) {
+                // fall through to noop
+            }
         }
         return buildLine("a", id, op, "{\"st\":\"err\",\"e\":\"noop\"}")
     }

@@ -107,10 +107,10 @@ at id 0 cannot be mistaken for a replay. The micro:bit keeps no record at all.
 - One request in flight per direction. An incoming request is answered
   immediately, never queued.
 - A request the **robot** raises (`vol_done` 9.6, `mcp_done` 9.7, `cam_done`
-  9.11, `detect_done` 9.12) allows only **300 ms** for its ack. `detect_done` is
-  resent with the same id until acked (up to a 16 s budget); the others are sent
-  once — a `cam_done` chunk lost in transit leaves a gap in the answer text
-  rather than a retry.
+  9.11, `detect_done` 9.12, `tof_get` 9.13) allows only **300 ms** for its ack.
+  `detect_done` is resent with the same id until acked (up to a 16 s budget); the
+  others are sent once — a `cam_done` chunk lost in transit leaves a gap in the
+  answer text rather than a retry, and `tof_get` simply tries again next cycle.
 - The robot probes `hello` every **500 ms** until answered, with no attempt
   limit — and if the answer says the versions disagree, it keeps probing (once
   a second) instead of giving up.
@@ -424,6 +424,22 @@ is empty, over 32 bytes, unsafe or non-ASCII before it puts anything on the wire
 the same way that 9.11's `{"q":""}` cannot be reached from its block. The last two
 rows mark the boundary — 32 bytes is answered, 33 is not.
 
+**9.13 `tof_get`** (robot → micro:bit) — `{}` → `{"st":"ok","d":N}`. The
+latest VL53L0X reading from the time-of-flight bench, in millimetres; `d` is 0
+when there is no valid reading (no sensor, an I2C timeout, or a value past the
+sensor's ~2 m range). Unlike the blocks above, this op is not in the extension
+itself: the program registers it (`tof_sensor.ts` and
+`factory_test_button_emotion_tof.ts` do, via `r300.onCustomRequest`), and any
+other program answers `noop` — so an older micro:bit image or an R300 that
+polls it degrades cleanly. R300 polls it at 1 s. A `0` reading (the extension's
+I2C timeout) makes both programs run `Rangefinder.init()` again, so a sensor
+whose power was unplugged and replugged recovers without a micro:bit reset;
+`init()` is safe to repeat and returns at once while the ID registers are missing.
+
+| Request | Answer |
+|---|---|
+| `{"s":"r300","id":7,"t":"r","op":"tof_get","p":{},"ck":123}` | `{"s":"mb","id":7,"t":"a","op":"tof_get","p":{"st":"ok","d":420}}` |
+
 ### 10. Timing summary
 
 | | Period | Ack timeout | Gives up |
@@ -433,6 +449,7 @@ rows mark the boundary — 32 bytes is answered, 33 is not.
 | requests | one at a time | 500 ms | after 2 retries with the same id |
 | `detect_done` | one per look | 300 ms | resent (same id) until acked, up to 16 s |
 | `cam_done` chunks | in order, one per photo | 300 ms | never — a lost chunk leaves a gap |
+| `tof_get` | 1 s | 300 ms | no retry — the next poll asks again |
 
 ### 11. Errors and limits
 
@@ -466,7 +483,9 @@ This repository is itself a MakeCode extension.
 | `test.ts` | Local test — not in `pxt.json` `testFiles` today; add it there to compile it as the top-level project |
 | `vision_only.ts` | VLM-only bench: the camera blocks with no AI conversation — add it to `testFiles` to build it |
 | `demo_dance_video.ts` | The current `testFiles` entry — the dance demo, compiled into the hex |
-| `test_2.ts` · `test_emotion.ts` · `test_buttons_change_emotion.ts` · `test_mcp_high_five.ts` | Bench demos, copied into MakeCode by hand |
+| `test_2.ts` · `test_emotion.ts` · `test_mcp_high_five.ts` | Bench demos, copied into MakeCode by hand |
+| `factory_test_button_emotion_tof.ts` | R300 Pengu factory micro:bit program: A/B face stepping plus the `tof_get` handler (9.13) the factory page polls |
+| `tof_sensor.ts` | VL53L0X bench; registers the `tof_get` op (9.13) so R300 can poll the cached reading |
 | `legacy/` | Retired MicroPython version, kept for reference |
 | `built/` | Build output — flash `built/binary.hex` |
 

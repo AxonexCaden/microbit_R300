@@ -14,8 +14,45 @@
 // Wiring on the micro:bit edge connector: SDA = pin 20, SCL = pin 19, plus 3V and GND. If the
 // reading stays 0 with the sensor connected, suspect the bus before the program: the VL53L0X
 // answers at address 0x29, and its ID register 0xC0 reads 0xEE on a live part.
+//
+// R300 polls the latest reading over the P0/P1 link with the `tof_get` op: request `{}`, ack
+// `{"st":"ok","d":N}` with N in millimetres and 0 = no valid reading. The handler answers from
+// a cache -- Rangefinder.distance() can block ~30 ms, which is too long to hold the serial RX
+// callback. A program that never registers the handler answers `noop`, so an older micro:bit
+// firmware and this build can share the same R300 code.
 
 Rangefinder.init()
+
+// Millimetres; 0 = no valid reading (also the extension's I2C timeout value).
+let lastTofMm = 0
+
+r300.onCustomRequest = function (op: string, p: any): string {
+    if (op != "tof_get") return ""
+    let d = lastTofMm
+    // The VL53L0X tops out around 2 m; anything larger is a no-target sentinel.
+    if (d < 0 || d > 2000) d = 0
+    return "{\"st\":\"ok\",\"d\":" + d + "}"
+}
+
+// Read in a background fiber so the slow LED display can never starve the cache R300 polls.
+// A 0 from distance() is the extension's I2C timeout. The VL53L0X loses its configuration when
+// its power is removed, so a replugged part needs the full init again; init() is safe to repeat
+// (it re-reads the ID and returns at once while the sensor is missing), which is what lets this
+// recover without resetting the micro:bit.
+control.inBackground(function () {
+    while (true) {
+        const d = Rangefinder.distance()
+        if (d > 0) {
+            lastTofMm = d
+        } else {
+            lastTofMm = 0
+            Rangefinder.init()
+        }
+        basic.pause(50)
+    }
+})
+
 basic.forever(function () {
-    basic.showNumber(Rangefinder.distance())
+    basic.showNumber(lastTofMm)
+    basic.pause(200)
 })
